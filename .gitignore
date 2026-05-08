@@ -1,0 +1,12 @@
+# compiled binary
+/agentsmith
+
+# secrets
+agentsmith.env
+
+# editor / tooling
+.idea/
+.claude/
+
+# logs
+*.log
