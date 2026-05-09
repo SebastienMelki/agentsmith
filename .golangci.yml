@@ -23,34 +23,34 @@ linters:
   disable:
     - errcheck        # re-disabled: too noisy for intentional _ = session.Close()
 
-linters-settings:
-  revive:
-    rules:
-      - name: exported
-        arguments:
-          - "checkPrivateReceivers"
-          - "sayRepetitiveInsteadOfStutters"
+  settings:
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - "checkPrivateReceivers"
+            - "sayRepetitiveInsteadOfStutters"
 
-  gosec:
-    excludes:
-      - G104 # unhandled errors in deferred Close — covered by errcheck disable above
+    gosec:
+      excludes:
+        - G104 # unhandled errors in deferred Close — covered by errcheck disable above
 
-  sloglint:
-    no-mixed-args: true   # disallow mixing key-value and printf-style args
-    kv-only: true         # require key-value pairs (slog.Info("msg", "k", v))
-    attr-only: false      # allow both slog.Attr and bare k/v pairs
-    static-msg: false     # allow dynamic log messages
-    no-raw-keys: false    # don't require slog.Attr wrappers for every key
-    key-naming-case: snake # enforce snake_case log keys
+    sloglint:
+      no-mixed-args: true   # disallow mixing key-value and printf-style args
+      kv-only: true         # require key-value pairs (slog.Info("msg", "k", v))
+      attr-only: false      # allow both slog.Attr and bare k/v pairs
+      static-msg: false     # allow dynamic log messages
+      no-raw-keys: false    # don't require slog.Attr wrappers for every key
+      key-naming-case: snake # enforce snake_case log keys
 
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-    disabled-checks:
-      - commentedOutCode
-      - whyNoLint
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - commentedOutCode
+        - whyNoLint
 
 issues:
   max-issues-per-linter: 0
