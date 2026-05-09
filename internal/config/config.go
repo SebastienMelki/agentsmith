@@ -21,6 +21,7 @@ type Target struct {
 // Config is the top-level agentsmith configuration.
 type Config struct {
 	ListenAddr string   `yaml:"listenAddr"`
+	AdminAddr  string   `yaml:"adminAddr"`
 	Path       string   `yaml:"path"`
 	Targets    []Target `yaml:"targets"`
 }
@@ -46,6 +47,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Path == "" {
 		cfg.Path = "/mcp"
+	}
+	if cfg.AdminAddr == "" {
+		cfg.AdminAddr = ":3002"
 	}
 	if len(cfg.Targets) == 0 {
 		return nil, errors.New("at least one target is required")

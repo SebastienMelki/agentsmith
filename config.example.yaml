@@ -3,6 +3,7 @@
 # Secrets are referenced via ${VAR} — set them in agentsmith.env or your environment.
 
 listenAddr: ":3001"
+adminAddr: ":3002" # internal status/admin API — keep off public interfaces
 path: /mcp
 
 targets:

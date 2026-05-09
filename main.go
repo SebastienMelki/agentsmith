@@ -14,6 +14,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sebastienmelki/agentsmith/internal/admin"
 	"github.com/sebastienmelki/agentsmith/internal/config"
 	"github.com/sebastienmelki/agentsmith/internal/gateway"
 )
@@ -53,36 +54,56 @@ func run(cfgPath string) error {
 	}
 	defer gw.Close()
 
-	server, err := gw.BuildServer(ctx)
-	if err != nil {
-		return err
-	}
-
-	mux := http.NewServeMux()
-	mux.Handle(cfg.Path, mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
-		return server
+	// MCP server — serves the federated tool catalog.
+	mcpMux := http.NewServeMux()
+	mcpMux.Handle(cfg.Path, mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
+		return gw.Server()
 	}, nil))
-
-	srv := &http.Server{
+	mcpSrv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           mux,
+		Handler:           mcpMux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	// Admin server — operational status and future control-plane endpoints.
+	adminSrv := &http.Server{
+		Addr:              cfg.AdminAddr,
+		Handler:           admin.New(gw).Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// serverErr carries the first fatal error from either server so we can
+	// surface it after a clean shutdown.
+	serverErr := make(chan error, 2)
+
 	go func() {
-		slog.Info("listening", "addr", cfg.ListenAddr, "path", cfg.Path)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "error", err)
-			os.Exit(1)
+		slog.Info("MCP server listening", "addr", cfg.ListenAddr, "path", cfg.Path)
+		if err := mcpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- fmt.Errorf("MCP server: %w", err)
+		}
+	}()
+
+	go func() {
+		slog.Info("admin server listening", "addr", cfg.AdminAddr)
+		if err := adminSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- fmt.Errorf("admin server: %w", err)
 		}
 	}()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	<-sig
 
-	slog.Info("shutting down")
+	var runErr error
+	select {
+	case <-sig:
+		slog.Info("shutting down")
+	case runErr = <-serverErr:
+		slog.Error("server error, shutting down", "error", runErr)
+	}
+
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
-	return srv.Shutdown(shutdownCtx)
+	_ = mcpSrv.Shutdown(shutdownCtx)
+	_ = adminSrv.Shutdown(shutdownCtx)
+	return runErr
 }
