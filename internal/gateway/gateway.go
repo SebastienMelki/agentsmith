@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"sort"
@@ -73,11 +74,36 @@ type ToolInfo struct {
 	OpenWorld   *bool `json:"openWorld,omitempty"`
 }
 
-// BackendDetail extends BackendStatus with the full hydrated tool list.
+// CallEntry records a single tool invocation for the call log.
+type CallEntry struct {
+	ToolName   string    `json:"toolName"`
+	CalledAt   time.Time `json:"calledAt"`
+	DurationMs int64     `json:"durationMs"`
+	Success    bool      `json:"success"`
+	Request    string    `json:"request,omitempty"`  // JSON-encoded arguments
+	Response   string    `json:"response,omitempty"` // JSON-encoded result
+	Error      string    `json:"error,omitempty"`
+}
+
+// Metrics holds lightweight aggregate counters for one backend.
+// All fields are protected by the parent backend's mu.
+type Metrics struct {
+	TotalCalls  int64            `json:"totalCalls"`
+	TotalErrors int64            `json:"totalErrors"`
+	TotalMs     int64            `json:"totalMs"` // sum of all durations for avg
+	PerTool     map[string]int64 `json:"perTool"` // call count keyed by tool name
+}
+
+// BackendDetail extends BackendStatus with the full hydrated tool list,
+// metrics and the recent call log.
 type BackendDetail struct {
 	BackendStatus
-	Tools []ToolInfo `json:"tools"`
+	Tools   []ToolInfo  `json:"tools"`
+	Metrics Metrics     `json:"metrics"`
+	Log     []CallEntry `json:"log"` // most-recent-first, up to logCap entries
 }
+
+const logCap = 500 // ring-buffer capacity for call log
 
 // backend holds all mutable state for one upstream MCP target.
 type backend struct {
@@ -97,6 +123,16 @@ type backend struct {
 	toolCount         int
 	toolsRegistered   bool        // true after the first successful ListTools+AddTool
 	tools             []*mcp.Tool // stored on first successful registration
+
+	// metrics and call log — guarded by mu
+	metrics  Metrics
+	logBuf   [logCap]CallEntry // ring buffer
+	logHead  int               // index of next write slot
+	logCount int               // total entries written (capped at logCap)
+
+	// logSubs receives a copy of every new CallEntry for SSE subscribers.
+	// Channels are added/removed under mu.
+	logSubs []chan CallEntry
 }
 
 // getSession returns the live session (and true) under an RLock. Tool dispatch
@@ -179,6 +215,20 @@ func (g *Gateway) Backends() []BackendStatus {
 	out := make([]BackendStatus, len(g.backends))
 	for i, b := range g.backends {
 		out[i] = b.snapshot()
+	}
+	return out
+}
+
+// BackendDetails returns a lightweight detail snapshot (status + metrics, no
+// tool list or call log) for every backend. Used by the dashboard panel where
+// the full tool/log payload would be wasteful.
+func (g *Gateway) BackendDetails() []BackendDetail {
+	out := make([]BackendDetail, len(g.backends))
+	for i, b := range g.backends {
+		out[i] = BackendDetail{
+			BackendStatus: b.snapshot(),
+			Metrics:       b.metricsSnapshot(),
+		}
 	}
 	return out
 }
@@ -348,12 +398,112 @@ func (g *Gateway) makeHandler(b *backend, originalName string) mcp.ToolHandler {
 		if len(req.Params.Arguments) > 0 {
 			args = req.Params.Arguments
 		}
-		return sess.CallTool(ctx, &mcp.CallToolParams{
+
+		start := time.Now()
+		result, err := sess.CallTool(ctx, &mcp.CallToolParams{
 			Name:      originalName,
 			Arguments: args,
 			Meta:      req.Params.Meta,
 		})
+		b.recordCall(originalName, start, args, result, err)
+		return result, err
 	}
+}
+
+// recordCall appends a CallEntry to the ring buffer and updates metrics.
+func (b *backend) recordCall(tool string, start time.Time, args any, result *mcp.CallToolResult, callErr error) {
+	ms := time.Since(start).Milliseconds()
+	e := CallEntry{
+		ToolName:   tool,
+		CalledAt:   start,
+		DurationMs: ms,
+		Success:    callErr == nil,
+		Request:    prettyJSON(args),
+		Response:   prettyJSON(result),
+	}
+	if callErr != nil {
+		e.Error = callErr.Error()
+	}
+
+	b.mu.Lock()
+	// ring buffer write
+	b.logBuf[b.logHead] = e
+	b.logHead = (b.logHead + 1) % logCap
+	if b.logCount < logCap {
+		b.logCount++
+	}
+	// metrics
+	b.metrics.TotalCalls++
+	b.metrics.TotalMs += ms
+	if callErr != nil {
+		b.metrics.TotalErrors++
+	}
+	if b.metrics.PerTool == nil {
+		b.metrics.PerTool = make(map[string]int64)
+	}
+	b.metrics.PerTool[tool]++
+	subs := make([]chan CallEntry, len(b.logSubs))
+	copy(subs, b.logSubs)
+	b.mu.Unlock()
+
+	// notify SSE subscribers outside the lock
+	for _, ch := range subs {
+		select {
+		case ch <- e:
+		default: // subscriber too slow — drop rather than block
+		}
+	}
+}
+
+// recentCalls returns the call log entries in reverse-chronological order
+// (most recent first), up to logCap entries.
+func (b *backend) recentCalls() []CallEntry {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.logCount == 0 {
+		return nil
+	}
+	out := make([]CallEntry, b.logCount)
+	for i := range b.logCount {
+		// walk backwards from the last written slot
+		idx := (b.logHead - 1 - i + logCap) % logCap
+		out[i] = b.logBuf[idx]
+	}
+	return out
+}
+
+// metricsSnapshot returns a copy of the current metrics.
+func (b *backend) metricsSnapshot() Metrics {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	pt := make(map[string]int64, len(b.metrics.PerTool))
+	maps.Copy(pt, b.metrics.PerTool)
+	return Metrics{
+		TotalCalls:  b.metrics.TotalCalls,
+		TotalErrors: b.metrics.TotalErrors,
+		TotalMs:     b.metrics.TotalMs,
+		PerTool:     pt,
+	}
+}
+
+// subscribeLogs registers a channel to receive new CallEntry values and
+// returns an unsubscribe function. The caller must drain the channel.
+func (b *backend) subscribeLogs() (ch chan CallEntry, unsub func()) {
+	ch = make(chan CallEntry, 32)
+	b.mu.Lock()
+	b.logSubs = append(b.logSubs, ch)
+	b.mu.Unlock()
+	unsub = func() {
+		b.mu.Lock()
+		for i, s := range b.logSubs {
+			if s == ch {
+				b.logSubs = append(b.logSubs[:i], b.logSubs[i+1:]...)
+				break
+			}
+		}
+		b.mu.Unlock()
+	}
+	return ch, unsub
 }
 
 // BackendByName returns a fully hydrated BackendDetail for the named backend,
@@ -380,7 +530,38 @@ func (b *backend) detailSnapshot() BackendDetail {
 	for _, t := range toolsCopy {
 		infos = append(infos, toToolInfo(t))
 	}
-	return BackendDetail{BackendStatus: base, Tools: infos}
+	return BackendDetail{
+		BackendStatus: base,
+		Tools:         infos,
+		Metrics:       b.metricsSnapshot(),
+		Log:           b.recentCalls(),
+	}
+}
+
+// SubscribeLogs exposes the per-backend log subscription to the admin layer.
+func (g *Gateway) SubscribeLogs(name string) (ch chan CallEntry, unsub func(), ok bool) {
+	for _, b := range g.backends {
+		if b.name == name {
+			ch, unsub = b.subscribeLogs()
+			return ch, unsub, true
+		}
+	}
+	return nil, nil, false
+}
+
+// AggregateMetrics sums metrics across all backends for the dashboard summary.
+func (g *Gateway) AggregateMetrics() Metrics {
+	agg := Metrics{PerTool: make(map[string]int64)}
+	for _, b := range g.backends {
+		m := b.metricsSnapshot()
+		agg.TotalCalls += m.TotalCalls
+		agg.TotalErrors += m.TotalErrors
+		agg.TotalMs += m.TotalMs
+		for k, v := range m.PerTool {
+			agg.PerTool[k] += v
+		}
+	}
+	return agg
 }
 
 // toToolInfo converts an mcp.Tool into the display-friendly ToolInfo type.

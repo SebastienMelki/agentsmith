@@ -10,7 +10,7 @@ import (
 )
 
 // connectedCount returns the number of backends in StateConnected.
-func connectedCount(backends []gateway.BackendStatus) int {
+func connectedCount(backends []gateway.BackendDetail) int {
 	n := 0
 	for _, b := range backends {
 		if b.State == gateway.StateConnected {
@@ -18,6 +18,38 @@ func connectedCount(backends []gateway.BackendStatus) int {
 		}
 	}
 	return n
+}
+
+// fmtAvgMs formats an average latency as "Xms", or "—" if no calls yet.
+func fmtAvgMs(totalMs, totalCalls int64) string {
+	if totalCalls == 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%dms", totalMs/totalCalls)
+}
+
+// fmtPct formats a ratio as a percentage string, e.g. "4.2%".
+func fmtPct(num, denom int64) string {
+	if denom == 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%.1f%%", float64(num)/float64(denom)*100)
+}
+
+// errorColor returns an inline style for a non-zero error count.
+func errorColor(errors int64) string {
+	if errors > 0 {
+		return "color: #eb5757;"
+	}
+	return ""
+}
+
+// logRowBorder returns the border-left style for a call log row.
+func logRowBorder(success bool) string {
+	if success {
+		return "border-left: 3px solid #1a4731; padding-left: 0.5rem; margin-bottom: 0.4rem;"
+	}
+	return "border-left: 3px solid #4a1010; padding-left: 0.5rem; margin-bottom: 0.4rem;"
 }
 
 // relativeTime formats an optional timestamp as a human-friendly relative

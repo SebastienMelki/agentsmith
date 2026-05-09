@@ -87,12 +87,19 @@ agentsmith ships a small operational HTTP server on a separate port (default `:3
 
 | Path | Purpose |
 |---|---|
-| `GET /` | Live HTML dashboard (templ + htmx) showing every backend's connection state and tool count |
-| `GET /ui/backends/{name}` | Per-backend detail page with the full tool list, schemas, and annotation hints |
+| `GET /` | Live HTML dashboard — backend table with per-backend call counts, error rates, avg latency, and a gateway-wide aggregate bar; auto-refreshes every 5 s via htmx |
+| `GET /ui/backends/{name}` | Per-backend detail page: connectivity state, metrics strip (calls / errors / avg latency), full tool list with schemas, and a **Call Log** button |
+| `GET /ui/backends/{name}/logs/stream` | Server-Sent Events stream — pushes each `CallEntry` as a `log` event in real time; used by the dialog's live tail |
 | `GET /healthz` | Liveness/readiness probe — `200` when at least one backend is connected, `503` otherwise |
 | `GET /backends` | Per-backend status as a JSON array, suitable for scripts and monitoring agents |
 
-> **Keep the admin port off public networks.** It exposes internal state with no authentication. Bind it to `127.0.0.1`, a private interface, or a sidecar-only network.
+### Call log
+
+Every tool invocation is appended to a per-backend ring buffer (last 500 calls). Each entry contains the tool name, timestamp, duration, success/error flag, and the full JSON request and response objects. The buffer is purely in-memory — it resets on restart.
+
+On any backend detail page, click the **▶ Call Log** button (fixed bottom-right) to open the log in a modal dialog. The dialog connects to the SSE stream on first open and prepends new entries live. Clicking the backdrop or the ✕ button closes it; the SSE connection stays alive in the background so no entries are missed.
+
+> **Keep the admin port off public networks.** It exposes internal state and full request/response payloads with no authentication. Bind it to `127.0.0.1`, a private interface, or a sidecar-only network.
 
 ## Non-goals
 

@@ -14,8 +14,10 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/sebastienmelki/agentsmith/internal/admin/ui"
 	"github.com/sebastienmelki/agentsmith/internal/gateway"
@@ -25,7 +27,10 @@ import (
 // as an interface makes the handler easy to test without a real gateway.
 type gatewaySource interface {
 	Backends() []gateway.BackendStatus
+	BackendDetails() []gateway.BackendDetail
 	BackendByName(name string) (gateway.BackendDetail, bool)
+	AggregateMetrics() gateway.Metrics
+	SubscribeLogs(name string) (ch chan gateway.CallEntry, unsub func(), ok bool)
 }
 
 // Server is the admin HTTP server.
@@ -44,6 +49,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /backends", s.handleBackends)
 	mux.HandleFunc("GET /ui/backends", s.handleBackendsUI)
+	mux.HandleFunc("GET /ui/backends/{name}/logs/stream", s.handleLogStream)
 	mux.HandleFunc("GET /ui/backends/{name}/partial", s.handleBackendDetailPartial)
 	mux.HandleFunc("GET /ui/backends/{name}", s.handleBackendDetail)
 	mux.HandleFunc("GET /{$}", s.handleDashboard)
@@ -90,9 +96,10 @@ func (s *Server) handleBackends(w http.ResponseWriter, _ *http.Request) {
 
 // handleDashboard renders the full admin dashboard HTML page.
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	backends := s.gw.Backends()
+	backends := s.gw.BackendDetails()
+	metrics := s.gw.AggregateMetrics()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := ui.Dashboard(backends).Render(r.Context(), w); err != nil {
+	if err := ui.Dashboard(backends, metrics).Render(r.Context(), w); err != nil {
 		slog.Error("admin: failed to render dashboard", "error", err)
 	}
 }
@@ -100,9 +107,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 // handleBackendsUI returns the BackendsPanel component as an HTML partial.
 // htmx polls this endpoint every 5 s and swaps in the updated panel.
 func (s *Server) handleBackendsUI(w http.ResponseWriter, r *http.Request) {
-	backends := s.gw.Backends()
+	backends := s.gw.BackendDetails()
+	metrics := s.gw.AggregateMetrics()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := ui.BackendsPanel(backends).Render(r.Context(), w); err != nil {
+	if err := ui.BackendsPanel(backends, metrics).Render(r.Context(), w); err != nil {
 		slog.Error("admin: failed to render backends panel", "error", err)
 	}
 }
@@ -133,6 +141,46 @@ func (s *Server) handleBackendDetailPartial(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := ui.BackendDetailContent(detail).Render(r.Context(), w); err != nil {
 		slog.Error("admin: failed to render backend detail partial", "name", name, "error", err)
+	}
+}
+
+// handleLogStream streams new CallEntry values to the client as Server-Sent Events.
+// Each event is a JSON-encoded CallEntry on the "log" event channel.
+func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	ch, unsub, ok := s.gw.SubscribeLogs(name)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	defer unsub()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering if present
+
+	rc := http.NewResponseController(w)
+
+	// Send a comment heartbeat every 15 s to keep the connection alive through
+	// proxies and load balancers that close idle connections.
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-heartbeat.C:
+			fmt.Fprintf(w, ": heartbeat\n\n")
+			_ = rc.Flush()
+		case entry := <-ch:
+			data, err := json.Marshal(entry)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(w, "event: log\ndata: %s\n\n", data)
+			_ = rc.Flush()
+		}
 	}
 }
 

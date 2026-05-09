@@ -9,6 +9,33 @@ changes (documented in their release notes).
 
 ## [Unreleased]
 
+### Added
+
+- **Per-backend call metrics** — each backend now tracks total calls, total
+  errors, summed latency, and a per-tool call count. All counters are
+  in-memory with no external dependency; the data model is designed so a
+  Prometheus exporter can be layered on later without structural changes.
+- **Rolling call log** — a fixed-size ring buffer (500 entries) per backend
+  records every tool invocation with its tool name, timestamp, duration,
+  success/error status, and the full JSON-encoded request arguments and
+  response body.
+- **Aggregate metrics bar** on the dashboard — a one-line summary above the
+  backends table showing gateway-wide totals: calls, errors, error rate, and
+  average latency. Per-backend calls, errors, and avg-latency columns added
+  to the table.
+- **Per-backend metrics strip** on the detail page — the status article now
+  includes call/error/latency stats beneath the connectivity chips.
+- **Call Log dialog** on the detail page — a sticky "▶ Call Log" button
+  (fixed bottom-right) opens a native `<dialog>` showing the 500-entry ring
+  buffer. Each row is a collapsible `<details>` element with the full request
+  and response JSON. The dialog lives outside the htmx-polled region so it
+  survives background refreshes.
+- **SSE live log tail** — `GET /ui/backends/{name}/logs/stream` is a
+  Server-Sent Events endpoint that pushes each new `CallEntry` as a `log`
+  event. The dialog connects lazily (on first open) and stays subscribed for
+  the page lifetime; new rows are prepended in real time without polling.
+  A 15-second heartbeat comment keeps the connection alive through proxies.
+
 ## [0.1.0] — 2026-05-09
 
 Initial public release.

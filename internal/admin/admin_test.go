@@ -35,9 +35,25 @@ func (f *fakeGateway) Backends() []gateway.BackendStatus {
 	return f.backends
 }
 
+func (f *fakeGateway) BackendDetails() []gateway.BackendDetail {
+	out := make([]gateway.BackendDetail, len(f.backends))
+	for i, s := range f.backends {
+		out[i] = gateway.BackendDetail{BackendStatus: s}
+	}
+	return out
+}
+
 func (f *fakeGateway) BackendByName(name string) (gateway.BackendDetail, bool) {
 	d, ok := f.details[name]
 	return d, ok
+}
+
+func (f *fakeGateway) AggregateMetrics() gateway.Metrics {
+	return gateway.Metrics{}
+}
+
+func (f *fakeGateway) SubscribeLogs(_ string) (chan gateway.CallEntry, func(), bool) {
+	return nil, nil, false
 }
 
 func newServer(fg *fakeGateway) http.Handler {

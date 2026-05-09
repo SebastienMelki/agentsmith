@@ -47,6 +47,68 @@ templ sharedHead(title string) {
 			table.params { font-size: 0.85em; }
 			table.params td, table.params th { white-space: nowrap; }
 			table.params td:last-child        { white-space: normal; }
+
+			/* ── aggregate metrics bar ──────────────────── */
+			.agg-bar {
+				display: flex;
+				gap: 1.5rem;
+				flex-wrap: wrap;
+				padding: 0.5rem 0;
+				font-size: 0.85em;
+				border-top: 1px solid var(--pico-muted-border-color);
+				margin-top: 0.5rem;
+			}
+
+			/* ── call log ───────────────────────────────── */
+			.log-row    { list-style: none; }
+			.log-summary {
+				display: flex;
+				align-items: center;
+				gap: 0.6rem;
+				cursor: pointer;
+				padding: 0.25rem 0;
+				user-select: none;
+			}
+			.log-payload {
+				padding: 0.5rem 0.5rem 0.5rem 1rem;
+			}
+			.log-payload pre {
+				font-size: 0.85em;
+				max-height: 200px;
+				overflow-y: auto;
+				background: var(--pico-card-background-color);
+				padding: 0.5rem;
+				border-radius: 4px;
+				margin: 0.25rem 0 0.75rem;
+			}
+
+			/* ── call log dialog ──────────────────────────── */
+			.log-dialog {
+				width: min(680px, 95vw);
+				height: min(80vh, 900px);
+				max-width: none;
+				max-height: none;
+				padding: 0;
+				border-radius: 8px;
+				border: 1px solid var(--pico-muted-border-color);
+				background: var(--pico-background-color);
+				overflow: hidden;
+			}
+			.log-dialog::backdrop {
+				background: rgba(0,0,0,0.55);
+				backdrop-filter: blur(2px);
+			}
+			/* sticky trigger button — bottom-right corner */
+			.log-open-btn {
+				position: fixed;
+				bottom: 1.5rem;
+				right: 1.5rem;
+				z-index: 100;
+				padding: 0.5rem 1rem;
+				font-size: 0.85em;
+				margin: 0;
+				box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+			}
 		</style>
 	</head>
 }
