@@ -1,5 +1,10 @@
 # agentsmith
 
+[![CI](https://github.com/sebastienmelki/agentsmith/actions/workflows/ci.yml/badge.svg)](https://github.com/sebastienmelki/agentsmith/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/sebastienmelki/agentsmith.svg)](https://pkg.go.dev/github.com/sebastienmelki/agentsmith)
+[![Go Report Card](https://goreportcard.com/badge/github.com/sebastienmelki/agentsmith)](https://goreportcard.com/report/github.com/sebastienmelki/agentsmith)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **agentsmith** is a lightweight [Model Context Protocol (MCP)](https://modelcontextprotocol.io) federation gateway written in Go.
 
 It connects to multiple MCP backend servers, aggregates their tools into a single Streamable HTTP endpoint, and namespaces them so there are no collisions — all while keeping each backend's credentials strictly isolated from the others.
@@ -32,7 +37,7 @@ Standard HTTP gateways (like agentgateway) operate at the transport layer and th
 
 ## Requirements
 
-- Go 1.21+
+- Go 1.25+
 - [golangci-lint v2](https://golangci-lint.run) (for `make lint`)
 
 ## Getting started
@@ -76,6 +81,30 @@ A plain `.env` file loaded automatically at startup if present. It should contai
 
 See `examples/` for deployment-specific `.env.example` files.
 
+## Admin server
+
+agentsmith ships a small operational HTTP server on a separate port (default `:3002`, configured via `adminAddr`):
+
+| Path | Purpose |
+|---|---|
+| `GET /` | Live HTML dashboard (templ + htmx) showing every backend's connection state and tool count |
+| `GET /ui/backends/{name}` | Per-backend detail page with the full tool list, schemas, and annotation hints |
+| `GET /healthz` | Liveness/readiness probe — `200` when at least one backend is connected, `503` otherwise |
+| `GET /backends` | Per-backend status as a JSON array, suitable for scripts and monitoring agents |
+
+> **Keep the admin port off public networks.** It exposes internal state with no authentication. Bind it to `127.0.0.1`, a private interface, or a sidecar-only network.
+
+## Non-goals
+
+agentsmith is intentionally a small federation primitive, not a full API gateway. The following are **not** planned and are likely to be declined as feature requests:
+
+- Authentication or authorization for incoming MCP clients (run agentsmith behind a service that handles this).
+- Rate limiting, quota tracking, or per-user scoping.
+- Vendor-specific MCP extensions or transports beyond Streamable HTTP.
+- A persistent store — agentsmith is stateless across restarts by design.
+
+If your use case needs any of the above, a layer in front of agentsmith (or an MCP server with broader scope) is the right place for it.
+
 ## Tool namespacing
 
 A backend named `dodo` with a tool named `create_payment` will be exposed as `dodo__create_payment`. The double-underscore separator (`__`) was chosen because it is unlikely to appear in real tool names.
@@ -117,6 +146,10 @@ The `examples/` directory contains ready-to-use configurations for common backen
 |---|---|
 | [`dodo-and-slack/`](examples/dodo-and-slack/) | Dodo Payments + Slack |
 | [`single-backend/`](examples/single-backend/) | Generic single-backend template |
+
+## Contributing
+
+PRs are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, conventions, and what's in/out of scope. Security issues: see [`SECURITY.md`](SECURITY.md).
 
 ## License
 

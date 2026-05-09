@@ -1,3 +1,5 @@
+// Package ui contains the templ-generated HTML components and view helpers
+// for agentsmith's admin dashboard.
 package ui
 
 import (
