@@ -1,0 +1,108 @@
+package ui
+
+import (
+	"fmt"
+
+	"github.com/sebastienmelki/agentsmith/internal/gateway"
+)
+
+// Dashboard renders the full admin dashboard page.
+templ Dashboard(backends []gateway.BackendStatus) {
+	<!DOCTYPE html>
+	<html lang="en" data-theme="dark">
+		@sharedHead("Agentsmith · Admin")
+		<body>
+			<header
+				class="container-fluid"
+				style="padding: 1.25rem 2rem; border-bottom: 1px solid var(--pico-muted-border-color);"
+			>
+				<hgroup style="margin: 0;">
+					<h2 style="margin: 0;">⚙️ Agentsmith</h2>
+					<p style="margin: 0;">Admin · MCP Gateway</p>
+				</hgroup>
+			</header>
+			<main class="container" style="margin-top: 2rem;">
+				@BackendsPanel(backends)
+			</main>
+		</body>
+	</html>
+}
+
+// BackendsPanel renders the backends status table.
+// Also served standalone at GET /ui/backends for htmx polling.
+templ BackendsPanel(backends []gateway.BackendStatus) {
+	<article hx-get="/ui/backends" hx-trigger="every 5s" hx-swap="outerHTML">
+		<header class="panel-header">
+			<strong>Backends</strong>
+			<small class="dim">
+				{ fmt.Sprintf("%d / %d connected", connectedCount(backends), len(backends)) }
+				&nbsp;·&nbsp; auto-refreshes every 5 s
+			</small>
+		</header>
+		if len(backends) == 0 {
+			<p><em>No backends configured.</em></p>
+		} else {
+			<figure style="margin: 0; overflow-x: auto;">
+				<table>
+					<thead>
+						<tr>
+							<th>Backend</th>
+							<th>State</th>
+							<th>Tools</th>
+							<th>Reconnects</th>
+							<th>Last Connected</th>
+							<th>Last Error</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, b := range backends {
+							@backendRow(b)
+						}
+					</tbody>
+				</table>
+			</figure>
+		}
+	</article>
+}
+
+templ backendRow(b gateway.BackendStatus) {
+	<tr>
+		<td>
+			<a href={ templ.SafeURL("/ui/backends/" + b.Name) }>
+				<strong>{ b.Name }</strong>
+			</a>
+			<br/>
+			<span class="dim">{ b.URL }</span>
+		</td>
+		<td>@stateBadge(b.State)</td>
+		<td>{ fmt.Sprintf("%d", b.ToolCount) }</td>
+		<td>{ fmt.Sprintf("%d", max(0, b.ReconnectAttempts-1)) }</td>
+		<td>
+			if b.LastConnectedAt != nil {
+				<time
+					class="dim"
+					title={ absoluteTime(b.LastConnectedAt) }
+					style="cursor: help; text-decoration: underline dotted;"
+				>{ relativeTime(b.LastConnectedAt) }</time>
+			} else {
+				<span class="dim">—</span>
+			}
+		</td>
+		<td>
+			if b.LastError != "" {
+				<small style="color: #eb5757;">{ b.LastError }</small>
+			}
+		</td>
+	</tr>
+}
+
+templ stateBadge(state gateway.BackendState) {
+	switch state {
+		case gateway.StateConnected:
+			<span class="state-badge state-connected">connected</span>
+		case gateway.StateConnecting:
+			<span class="state-badge state-connecting">connecting</span>
+		default:
+			<span class="state-badge state-error">{ string(state) }</span>
+	}
+}

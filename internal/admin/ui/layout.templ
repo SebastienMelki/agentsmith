@@ -1,0 +1,52 @@
+package ui
+
+// sharedHead renders the common <head> element for every admin page.
+// All shared and page-specific CSS lives here so there is a single source
+// of truth for the design system.
+templ sharedHead(title string) {
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1"/>
+		<title>{ title }</title>
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"/>
+		<script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+		<style>
+			/* ── state badges ─────────────────────────────── */
+			.state-badge {
+				display: inline-block;
+				padding: 0.15em 0.6em;
+				border-radius: 999px;
+				font-size: 0.75em;
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+			}
+			.state-connected  { background: #1a4731; color: #6fcf97; }
+			.state-connecting { background: #4a3000; color: #f2c94c; }
+			.state-error      { background: #4a1010; color: #eb5757; }
+
+			/* ── annotation badges (detail page) ─────────── */
+			.badge-readonly    { background: #1a4731; color: #6fcf97; }
+			.badge-idempotent  { background: #1a2f50; color: #5dade2; }
+			.badge-destructive { background: #4a1010; color: #eb5757; }
+
+			/* ── utility ─────────────────────────────────── */
+			.dim         { opacity: 0.55; font-size: 0.85em; }
+			.panel-header { display: flex; justify-content: space-between; align-items: center; }
+
+			/* ── detail page ─────────────────────────────── */
+			.meta-chips { display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap; }
+			.tool-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: flex-start;
+				gap: 1rem;
+				flex-wrap: wrap;
+			}
+			.badge-row   { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+			table.params { font-size: 0.85em; }
+			table.params td, table.params th { white-space: nowrap; }
+			table.params td:last-child        { white-space: normal; }
+		</style>
+	</head>
+}

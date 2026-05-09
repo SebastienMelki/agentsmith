@@ -4,11 +4,13 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +49,36 @@ type BackendStatus struct {
 	ToolCount         int          `json:"toolCount"`
 }
 
+// ParamInfo describes a single input parameter extracted from a tool's JSON Schema.
+type ParamInfo struct {
+	Name        string `json:"name"`
+	Type        string `json:"type,omitempty"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required"`
+	Default     string `json:"default,omitempty"` // JSON-encoded default value
+}
+
+// ToolInfo is a fully hydrated representation of a backend tool for display.
+type ToolInfo struct {
+	Name         string      `json:"name"`
+	Title        string      `json:"title,omitempty"`
+	Description  string      `json:"description,omitempty"`
+	Params       []ParamInfo `json:"params"`
+	InputSchema  string      `json:"inputSchema"`            // pretty-printed JSON
+	OutputSchema string      `json:"outputSchema,omitempty"` // pretty-printed JSON
+	// Annotation hints from the MCP spec.
+	ReadOnly    bool  `json:"readOnly"`
+	Idempotent  bool  `json:"idempotent"`
+	Destructive *bool `json:"destructive,omitempty"`
+	OpenWorld   *bool `json:"openWorld,omitempty"`
+}
+
+// BackendDetail extends BackendStatus with the full hydrated tool list.
+type BackendDetail struct {
+	BackendStatus
+	Tools []ToolInfo `json:"tools"`
+}
+
 // backend holds all mutable state for one upstream MCP target.
 type backend struct {
 	// immutable after creation
@@ -63,7 +95,8 @@ type backend struct {
 	lastConnectedAt   *time.Time
 	reconnectAttempts int
 	toolCount         int
-	toolsRegistered   bool // true after the first successful ListTools+AddTool
+	toolsRegistered   bool        // true after the first successful ListTools+AddTool
+	tools             []*mcp.Tool // stored on first successful registration
 }
 
 // getSession returns the live session (and true) under an RLock. Tool dispatch
@@ -289,9 +322,13 @@ func (g *Gateway) registerTools(ctx context.Context, b *backend, sess *mcp.Clien
 		g.server.AddTool(&namespaced, g.makeHandler(b, originalName))
 	}
 
+	toolsCopy := make([]*mcp.Tool, len(result.Tools))
+	copy(toolsCopy, result.Tools)
+
 	b.mu.Lock()
 	b.toolsRegistered = true
 	b.toolCount = len(result.Tools)
+	b.tools = toolsCopy
 	b.mu.Unlock()
 
 	slog.Info("registered tools", "backend", b.name, "count", len(result.Tools))
@@ -319,7 +356,116 @@ func (g *Gateway) makeHandler(b *backend, originalName string) mcp.ToolHandler {
 	}
 }
 
-// SplitNamespacedTool reverses the namespacing applied at registration. Useful
+// BackendByName returns a fully hydrated BackendDetail for the named backend,
+// or false if no backend with that name exists.
+func (g *Gateway) BackendByName(name string) (BackendDetail, bool) {
+	for _, b := range g.backends {
+		if b.name == name {
+			return b.detailSnapshot(), true
+		}
+	}
+	return BackendDetail{}, false
+}
+
+// detailSnapshot builds a BackendDetail from the backend's current state.
+func (b *backend) detailSnapshot() BackendDetail {
+	base := b.snapshot() // acquires + releases RLock
+
+	b.mu.RLock()
+	toolsCopy := make([]*mcp.Tool, len(b.tools))
+	copy(toolsCopy, b.tools)
+	b.mu.RUnlock()
+
+	infos := make([]ToolInfo, 0, len(toolsCopy))
+	for _, t := range toolsCopy {
+		infos = append(infos, toToolInfo(t))
+	}
+	return BackendDetail{BackendStatus: base, Tools: infos}
+}
+
+// toToolInfo converts an mcp.Tool into the display-friendly ToolInfo type.
+func toToolInfo(t *mcp.Tool) ToolInfo {
+	info := ToolInfo{
+		Name:        t.Name,
+		Title:       t.Title,
+		Description: t.Description,
+		InputSchema: prettyJSON(t.InputSchema),
+		Params:      extractParams(t.InputSchema),
+	}
+	if t.OutputSchema != nil {
+		info.OutputSchema = prettyJSON(t.OutputSchema)
+	}
+	if t.Annotations != nil {
+		info.ReadOnly = t.Annotations.ReadOnlyHint
+		info.Idempotent = t.Annotations.IdempotentHint
+		info.Destructive = t.Annotations.DestructiveHint
+		info.OpenWorld = t.Annotations.OpenWorldHint
+	}
+	return info
+}
+
+// extractParams parses the top-level properties of a JSON Schema object into
+// a flat slice of ParamInfo for tabular display. Returns nil for schemas that
+// have no top-level properties or cannot be parsed.
+func extractParams(schema any) []ParamInfo {
+	if schema == nil {
+		return nil
+	}
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return nil
+	}
+	var s struct {
+		Properties map[string]struct {
+			Type        string          `json:"type"`
+			Description string          `json:"description"`
+			Default     json.RawMessage `json:"default"`
+		} `json:"properties"`
+		Required []string `json:"required"`
+	}
+	if err := json.Unmarshal(data, &s); err != nil || len(s.Properties) == 0 {
+		return nil
+	}
+	req := make(map[string]bool, len(s.Required))
+	for _, r := range s.Required {
+		req[r] = true
+	}
+	params := make([]ParamInfo, 0, len(s.Properties))
+	for name, prop := range s.Properties {
+		p := ParamInfo{
+			Name:        name,
+			Type:        prop.Type,
+			Description: prop.Description,
+			Required:    req[name],
+		}
+		if len(prop.Default) > 0 && string(prop.Default) != "null" {
+			p.Default = string(prop.Default)
+		}
+		params = append(params, p)
+	}
+	// Required params first, then alphabetical.
+	sort.Slice(params, func(i, j int) bool {
+		if params[i].Required != params[j].Required {
+			return params[i].Required
+		}
+		return params[i].Name < params[j].Name
+	})
+	return params
+}
+
+// prettyJSON marshals v to indented JSON. Returns an empty string on error.
+func prettyJSON(v any) string {
+	if v == nil {
+		return ""
+	}
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// SplitNamespacedTool reverses the namespacing applied at registration.
 // for downstream consumers that want to display the source backend separately
 // from the tool name.
 func SplitNamespacedTool(name string) (target, tool string, ok bool) {

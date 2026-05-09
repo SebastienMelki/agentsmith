@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/a-h/templ v0.3.1001 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect

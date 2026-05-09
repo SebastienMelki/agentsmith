@@ -1,11 +1,15 @@
-.PHONY: build run lint fmt test clean help
+.PHONY: build run lint fmt test clean templ help
 
 BINARY  := bin/agentsmith
 CONFIG  := config.yaml
 GO      := go
 
+## templ: run the templ code generator (required before build)
+templ:
+	$(GO) run github.com/a-h/templ/cmd/templ@latest generate ./internal/admin/ui/
+
 ## build: compile the binary into bin/
-build:
+build: templ
 	@mkdir -p bin
 	$(GO) build -o $(BINARY) .
 

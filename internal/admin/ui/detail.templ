@@ -1,0 +1,179 @@
+package ui
+
+import (
+	"fmt"
+
+	"github.com/sebastienmelki/agentsmith/internal/gateway"
+)
+
+// BackendDetailPage renders the full detail page for a single backend.
+// The static shell (head, top nav, backend identity) never refreshes;
+// BackendDetailContent is the live region that polls every 5 s.
+templ BackendDetailPage(detail gateway.BackendDetail) {
+	<!DOCTYPE html>
+	<html lang="en" data-theme="dark">
+		@sharedHead(detail.Name + " · Agentsmith Admin")
+		<body>
+			<header
+				class="container-fluid"
+				style="padding: 1rem 2rem; border-bottom: 1px solid var(--pico-muted-border-color); display: flex; align-items: center; gap: 1.5rem;"
+			>
+				<a href="/" class="secondary" style="white-space: nowrap;">← Dashboard</a>
+				<hgroup style="margin: 0;">
+					<h2 style="margin: 0;">{ detail.Name }</h2>
+					<p class="dim" style="margin: 0;">{ detail.URL }</p>
+				</hgroup>
+			</header>
+			<main class="container" style="margin-top: 2rem;">
+				@BackendDetailContent(detail)
+			</main>
+		</body>
+	</html>
+}
+
+// BackendDetailContent is served both inline (on page load) and as the htmx
+// partial at GET /ui/backends/{name}/partial. It replaces itself every 5 s,
+// so both the status strip and the tool list stay live without a full reload.
+templ BackendDetailContent(detail gateway.BackendDetail) {
+	<div hx-get={ "/ui/backends/" + detail.Name + "/partial" } hx-trigger="every 5s" hx-swap="outerHTML">
+		@detailStatusStrip(detail.BackendStatus)
+		@toolList(detail.Tools)
+	</div>
+}
+
+// detailStatusStrip shows the current connectivity state and key metrics.
+templ detailStatusStrip(s gateway.BackendStatus) {
+	<article style="margin-bottom: 2rem;">
+		<div class="meta-chips">
+			@stateBadge(s.State)
+			<span class="dim">
+				<strong style="color: inherit;">{ fmt.Sprintf("%d", s.ToolCount) }</strong> tools
+			</span>
+			<span class="dim">
+				<strong style="color: inherit;">{ fmt.Sprintf("%d", max(0, s.ReconnectAttempts-1)) }</strong> reconnects
+			</span>
+			if s.LastConnectedAt != nil {
+				<span class="dim">
+					connected&#32;<time
+						title={ absoluteTime(s.LastConnectedAt) }
+						style="cursor: help; text-decoration: underline dotted;"
+					>{ relativeTime(s.LastConnectedAt) }</time>
+				</span>
+			}
+			<span class="dim" style="margin-left: auto; font-size: 0.8em;">auto-refreshes every 5 s</span>
+		</div>
+		if s.LastError != "" {
+			<p style="margin: 0.75rem 0 0; font-size: 0.85em; color: #eb5757;">
+				⚠ { s.LastError }
+			</p>
+		}
+	</article>
+}
+
+// toolList renders all tools, or a placeholder while the backend is connecting.
+templ toolList(tools []gateway.ToolInfo) {
+	if len(tools) == 0 {
+		<p class="dim"><em>No tools registered yet — waiting for backend to connect.</em></p>
+	} else {
+		<h3 style="margin-bottom: 1.25rem;">
+			{ fmt.Sprintf("Tools (%d)", len(tools)) }
+		</h3>
+		for _, t := range tools {
+			@toolCard(t)
+		}
+	}
+}
+
+templ toolCard(t gateway.ToolInfo) {
+	<article style="margin-bottom: 1.25rem;">
+		<header>
+			<div class="tool-header">
+				<div>
+					<code>{ t.Name }</code>
+					if t.Title != "" && t.Title != t.Name {
+						<span class="dim" style="margin-left: 0.6rem;">{ t.Title }</span>
+					}
+				</div>
+				<div class="badge-row">
+					if t.ReadOnly {
+						<span class="state-badge badge-readonly">read-only</span>
+					}
+					if t.Idempotent {
+						<span class="state-badge badge-idempotent">idempotent</span>
+					}
+					if t.Destructive != nil && *t.Destructive {
+						<span class="state-badge badge-destructive">destructive</span>
+					}
+					if t.OpenWorld != nil && *t.OpenWorld {
+						<span class="state-badge" style="background: #2a2a50; color: #a29bfe;">open-world</span>
+					}
+				</div>
+			</div>
+		</header>
+		if t.Description != "" {
+			<p style="margin: 0 0 0.75rem; font-size: 0.9em;">{ t.Description }</p>
+		}
+		@paramsSection(t.Params)
+		if t.InputSchema != "" {
+			<details style="margin-top: 0.75rem;">
+				<summary class="dim" style="font-size: 0.8em; cursor: pointer; user-select: none;">
+					Full input schema
+				</summary>
+				<pre style="font-size: 0.75em; margin-top: 0.5rem; overflow-x: auto; padding: 0.75rem; border-radius: 6px;"><code>{ t.InputSchema }</code></pre>
+			</details>
+		}
+		if t.OutputSchema != "" {
+			<details style="margin-top: 0.5rem;">
+				<summary class="dim" style="font-size: 0.8em; cursor: pointer; user-select: none;">
+					Output schema
+				</summary>
+				<pre style="font-size: 0.75em; margin-top: 0.5rem; overflow-x: auto; padding: 0.75rem; border-radius: 6px;"><code>{ t.OutputSchema }</code></pre>
+			</details>
+		}
+	</article>
+}
+
+templ paramsSection(params []gateway.ParamInfo) {
+	if len(params) == 0 {
+		<p class="dim" style="font-size: 0.8em; margin: 0;">No input parameters.</p>
+	} else {
+		<figure style="margin: 0; overflow-x: auto;">
+			<table class="params">
+				<thead>
+					<tr>
+						<th>Parameter</th>
+						<th>Type</th>
+						<th>Required</th>
+						<th>Description</th>
+						<th>Default</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, p := range params {
+						<tr>
+							<td>
+								if p.Required {
+									<strong><code>{ p.Name }</code></strong>
+								} else {
+									<code class="dim">{ p.Name }</code>
+								}
+							</td>
+							<td><span class="dim">{ p.Type }</span></td>
+							<td>
+								if p.Required {
+									<span style="color: #6fcf97; font-size: 0.9em;">✓</span>
+								}
+							</td>
+							<td><span class="dim">{ p.Description }</span></td>
+							<td>
+								if p.Default != "" {
+									<code class="dim" style="font-size: 0.8em;">{ p.Default }</code>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</figure>
+	}
+}
