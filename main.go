@@ -1,23 +1,35 @@
+// Package main is the agentsmith entry point.
 package main
 
 import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sebastienmelki/agentsmith/internal/config"
 	"github.com/sebastienmelki/agentsmith/internal/gateway"
 )
 
 func main() {
-	cfgPath := flag.String("f", "config.yaml", "path to config file")
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+
+	// Best-effort: load a local .env file if present. Production deployments
+	// are expected to inject environment variables directly.
+	if err := godotenv.Load("agentsmith.env"); err != nil && !os.IsNotExist(err) {
+		slog.Warn("could not load agentsmith.env", "error", err)
+	}
+
+	cfgPath := flag.String("f", "config.yaml", "path to config file (copy from config.example.yaml)")
 	flag.Parse()
 
 	if err := run(*cfgPath); err != nil {
@@ -47,7 +59,7 @@ func run(cfgPath string) error {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle(cfg.Path, mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+	mux.Handle(cfg.Path, mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return server
 	}, nil))
 
@@ -58,16 +70,18 @@ func run(cfgPath string) error {
 	}
 
 	go func() {
-		log.Printf("agentsmith listening on %s%s", cfg.ListenAddr, cfg.Path)
+		slog.Info("listening", "addr", cfg.ListenAddr, "path", cfg.Path)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("listen: %v", err)
+			slog.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
-	log.Println("agentsmith: shutting down")
+
+	slog.Info("shutting down")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	return srv.Shutdown(shutdownCtx)

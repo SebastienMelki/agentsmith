@@ -1,12 +1,15 @@
 # compiled binary
 /agentsmith
 
-# secrets
+# debugger binaries (Delve / IDE)
+__debug_bin*
+
+# secrets and local config — copy from *.example files
 agentsmith.env
+config.yaml
 
 # editor / tooling
 .idea/
+.vscode/
 .claude/
-
-# logs
 *.log

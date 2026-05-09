@@ -1,0 +1,57 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose       # HTTP response bodies must be closed
+    - errorlint       # correct error wrapping with errors.Is/As
+    - fatcontext      # avoid storing fat contexts in loops/closures
+    - gocritic        # opinionated but practical style checks
+    - gosec           # security: we handle API keys and secrets
+    - misspell        # catch typos in comments and strings
+    - modernize       # prefer modern Go idioms
+    - nilerr          # don't return nil when err != nil
+    - noctx           # HTTP requests should carry a context
+    - perfsprint      # prefer strconv/strings over fmt.Sprintf where possible
+    - prealloc        # pre-allocate slices when length is known
+    - revive          # drop-in golint replacement
+    - sloglint        # enforce structured slog usage
+    - unconvert       # remove unnecessary type conversions
+    - unparam         # flag unused function parameters
+    - usestdlibvars   # prefer http.MethodGet over "GET", etc.
+
+  disable:
+    - errcheck        # re-disabled: too noisy for intentional _ = session.Close()
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        arguments:
+          - "checkPrivateReceivers"
+          - "sayRepetitiveInsteadOfStutters"
+
+  gosec:
+    excludes:
+      - G104 # unhandled errors in deferred Close — covered by errcheck disable above
+
+  sloglint:
+    no-mixed-args: true   # disallow mixing key-value and printf-style args
+    kv-only: true         # require key-value pairs (slog.Info("msg", "k", v))
+    attr-only: false      # allow both slog.Attr and bare k/v pairs
+    static-msg: false     # allow dynamic log messages
+    no-raw-keys: false    # don't require slog.Attr wrappers for every key
+    key-naming-case: snake # enforce snake_case log keys
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - commentedOutCode
+      - whyNoLint
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

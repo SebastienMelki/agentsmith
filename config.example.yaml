@@ -1,0 +1,18 @@
+# agentsmith configuration example.
+# Copy this file to config.yaml (gitignored) and fill in your values.
+# Secrets are referenced via ${VAR} — set them in agentsmith.env or your environment.
+
+listenAddr: ":3001"
+path: /mcp
+
+targets:
+    - name: dodo
+      url: http://127.0.0.1:8765/mcp
+      headers:
+          X-Dodo-API-Key: ${DODO_PAYMENTS_API_KEY}
+          X-Dodo-Webhook-Key: ${DODO_PAYMENTS_WEBHOOK_KEY}
+
+    - name: slack
+      url: http://127.0.0.1:8766/mcp
+      headers:
+          X-Slack-Token: ${SLACK_TOKEN}

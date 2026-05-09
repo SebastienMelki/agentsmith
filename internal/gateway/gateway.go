@@ -1,10 +1,11 @@
+// Package gateway connects to one or more MCP backends and federates their
+// tools behind a single namespaced MCP server.
 package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -33,7 +34,7 @@ type backend struct {
 func New(ctx context.Context, cfg *config.Config) (*Gateway, error) {
 	g := &Gateway{}
 	for _, t := range cfg.Targets {
-		log.Printf("agentsmith: connecting to backend %q at %s", t.Name, t.URL)
+		slog.Info("connecting to backend", "name", t.Name, "url", t.URL)
 		client := mcp.NewClient(&mcp.Implementation{Name: "agentsmith", Version: "v0.0.1"}, nil)
 		httpClient := &http.Client{
 			Timeout:   60 * time.Second,
@@ -75,21 +76,19 @@ func (g *Gateway) BuildServer(ctx context.Context) (*mcp.Server, error) {
 			namespaced.Name = b.name + namespaceSep + t.Name
 			server.AddTool(&namespaced, makeToolHandler(b, original.Name))
 		}
-		log.Printf("agentsmith: registered %d tools from %q", len(result.Tools), b.name)
+		slog.Info("registered tools from backend", "backend", b.name, "count", len(result.Tools))
 		totalTools += len(result.Tools)
 	}
-	log.Printf("agentsmith: federation ready — %d tools across %d backends", totalTools, len(g.backends))
+	slog.Info("federation ready", "total_tools", totalTools, "backends", len(g.backends))
 	return server, nil
 }
 
 func makeToolHandler(b *backend, originalName string) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		// Audit log keyed to MCP semantics — the kind of observability that
-		// HTTP-only gateways can't easily produce because they don't speak the protocol.
-		log.Printf("agentsmith: call %s%s%s", b.name, namespaceSep, originalName)
+		slog.Info("tool call", "backend", b.name, "tool", originalName)
 		var args any
 		if len(req.Params.Arguments) > 0 {
-			args = json.RawMessage(req.Params.Arguments)
+			args = req.Params.Arguments
 		}
 		return b.session.CallTool(ctx, &mcp.CallToolParams{
 			Name:      originalName,
@@ -99,6 +98,7 @@ func makeToolHandler(b *backend, originalName string) mcp.ToolHandler {
 	}
 }
 
+// Close terminates all backend sessions.
 func (g *Gateway) Close() {
 	for _, b := range g.backends {
 		if b.session != nil {
@@ -111,11 +111,11 @@ func (g *Gateway) Close() {
 // for downstream consumers that want to display the source backend separately
 // from the tool name.
 func SplitNamespacedTool(name string) (target, tool string, ok bool) {
-	i := strings.Index(name, namespaceSep)
-	if i < 0 {
+	before, after, ok := strings.Cut(name, namespaceSep)
+	if !ok {
 		return "", name, false
 	}
-	return name[:i], name[i+len(namespaceSep):], true
+	return before, after, true
 }
 
 // headerInjector is a per-target RoundTripper that adds only that target's
