@@ -1,16 +1,18 @@
-.PHONY: build run lint fmt clean help
+.PHONY: build run lint fmt test clean help
 
-BINARY   := agentsmith
-GO       := go
-GOFLAGS  :=
+BINARY  := bin/agentsmith
+CONFIG  := config.yaml
+GO      := go
 
-## build: compile the binary
+## build: compile the binary into bin/
 build:
-	$(GO) build $(GOFLAGS) -o $(BINARY) .
+	@mkdir -p bin
+	$(GO) build -o $(BINARY) .
 
-## run: build and start agentsmith (requires agentsmith.env and config.yaml)
+## run: build and start agentsmith (requires config.yaml — copy from examples/)
 run: build
-	./run.sh
+	@test -f $(CONFIG) || { echo "error: $(CONFIG) not found — copy one from examples/ and fill in your values"; exit 1; }
+	./$(BINARY) -f $(CONFIG)
 
 ## lint: run golangci-lint
 lint:
@@ -26,7 +28,7 @@ test:
 
 ## clean: remove build artefacts and debugger binaries
 clean:
-	rm -f $(BINARY)
+	rm -rf bin/
 	rm -f __debug_bin*
 
 ## help: list available targets

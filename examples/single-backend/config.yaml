@@ -1,0 +1,20 @@
+# Example: single backend
+#
+# The simplest possible agentsmith setup — one MCP backend,
+# authenticated with a Bearer token.
+# Tools are exposed as my_service__<tool>.
+#
+# Usage:
+#   cp examples/single-backend/config.yaml config.yaml
+#   cp examples/single-backend/.env.example agentsmith.env
+#   # fill in agentsmith.env, then:
+#   make run
+
+listenAddr: ":3001"
+path: /mcp
+
+targets:
+  - name: my_service
+    url: http://127.0.0.1:8765/mcp
+    headers:
+      Authorization: Bearer ${MY_SERVICE_TOKEN}

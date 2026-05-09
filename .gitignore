@@ -1,15 +1,44 @@
-# compiled binary
-/agentsmith
+# ----- Go -----
+
+# compiled binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# test binaries (go test -c)
+*.test
+
+# coverage & profiling output
+*.out
+coverage.html
+*.prof
+*.pprof
+
+# go workspace (opt-in per developer)
+go.work
+go.work.sum
+
+# vendor directory
+vendor/
+
+# build output
+dist/
 
 # debugger binaries (Delve / IDE)
 __debug_bin*
 
-# secrets and local config — copy from *.example files
-agentsmith.env
-config.yaml
+# ----- agentsmith -----
 
-# editor / tooling
+# user-local secrets and config — copy from examples/
+agentsmith.env
+/config.yaml
+
+# ----- editors -----
 .idea/
 .vscode/
+.zed/
 .claude/
 *.log

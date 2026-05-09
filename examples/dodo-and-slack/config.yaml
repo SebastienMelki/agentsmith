@@ -1,0 +1,27 @@
+# Example: Dodo Payments + Slack
+#
+# Federates two MCP backends behind a single /mcp endpoint.
+# Tools are exposed as:
+#   dodo__<tool>   — Dodo Payments operations
+#   slack__<tool>  — Slack messaging operations
+#
+# Usage:
+#   cp examples/dodo-and-slack/config.yaml config.yaml
+#   cp examples/dodo-and-slack/.env.example agentsmith.env
+#   # fill in agentsmith.env, then:
+#   make run
+
+listenAddr: ":3001"
+path: /mcp
+
+targets:
+  - name: dodo
+    url: http://127.0.0.1:8765/mcp
+    headers:
+      X-Dodo-API-Key: ${DODO_PAYMENTS_API_KEY}
+      X-Dodo-Webhook-Key: ${DODO_PAYMENTS_WEBHOOK_KEY}
+
+  - name: slack
+    url: http://127.0.0.1:8766/mcp
+    headers:
+      X-Slack-Token: ${SLACK_TOKEN}

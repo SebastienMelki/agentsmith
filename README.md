@@ -42,13 +42,13 @@ Standard HTTP gateways (like agentgateway) operate at the transport layer and th
 git clone https://github.com/sebastienmelki/agentsmith.git
 cd agentsmith
 
-# 2. Configure secrets
-cp agentsmith.env.example agentsmith.env
-$EDITOR agentsmith.env   # fill in real values
+# 2. Pick an example that matches your setup and copy it
+cp examples/dodo-and-slack/config.yaml config.yaml
+$EDITOR config.yaml        # adjust backend URLs if needed
 
-# 3. Configure targets
-cp config.example.yaml config.yaml
-$EDITOR config.yaml      # adjust backend URLs and headers as needed
+# 3. Add your backend credentials
+cp examples/dodo-and-slack/.env.example agentsmith.env
+$EDITOR agentsmith.env     # fill in real API keys/tokens
 
 # 4. Build and run
 make run
@@ -70,9 +70,11 @@ agentsmith will start on `http://localhost:3001/mcp` by default.
 
 Secrets can be referenced as `${MY_VAR}` and resolved from the environment. agentsmith refuses to start if any referenced variable is unset.
 
-### `agentsmith.env`
+### `agentsmith.env` (gitignored)
 
-A plain `.env` file (gitignored) loaded automatically at startup. In production, inject environment variables directly — the file is optional.
+A plain `.env` file loaded automatically at startup if present. It should contain the credentials for your specific backends — the variable names are whatever you reference via `${VAR}` in `config.yaml`. In production, inject environment variables directly; the file is entirely optional.
+
+See `examples/` for deployment-specific `.env.example` files.
 
 ## Tool namespacing
 
@@ -104,8 +106,17 @@ targets:
       Authorization: Bearer ${MY_SERVICE_TOKEN}
 ```
 
-3. Add `MY_SERVICE_TOKEN` to `agentsmith.env`.
+3. Add `MY_SERVICE_TOKEN=<value>` to `agentsmith.env`.
 4. Restart agentsmith — it discovers tools at startup.
+
+## Examples
+
+The `examples/` directory contains ready-to-use configurations for common backend combinations:
+
+| Example | Backends |
+|---|---|
+| [`dodo-and-slack/`](examples/dodo-and-slack/) | Dodo Payments + Slack |
+| [`single-backend/`](examples/single-backend/) | Generic single-backend template |
 
 ## License
 
