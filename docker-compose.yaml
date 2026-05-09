@@ -1,0 +1,30 @@
+# Local hardened run for agentsmith.
+#
+# Usage:
+#   cp examples/dodo-and-slack/config.yaml config.yaml
+#   cp examples/dodo-and-slack/.env.example agentsmith.env
+#   $EDITOR agentsmith.env       # fill in your secrets
+#   docker compose up --build
+
+services:
+  agentsmith:
+    build: .
+    image: agentsmith:local
+    container_name: agentsmith
+    ports:
+      - "3001:3001"   # MCP endpoint
+      - "3002:3002"   # admin UI (do NOT expose publicly in prod)
+    volumes:
+      - ./config.yaml:/etc/agentsmith/config.yaml:ro
+    env_file:
+      - agentsmith.env
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # `wget` isn't in distroless, so we let the platform/curl handle this if
+      # needed. Compose's healthcheck is best-effort here; remove if unwanted.
+      disable: true

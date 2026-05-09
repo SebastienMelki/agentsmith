@@ -1,0 +1,54 @@
+# Keep the build context tiny and reproducible. Anything not needed by
+# `go build` should be ignored — it speeds up builds and avoids leaking
+# local secrets/config into image layers.
+
+# VCS & CI
+.git
+.github
+.gitignore
+.golangci.yml
+
+# Editors / local state
+.idea
+.vscode
+.zed
+.claude
+*.swp
+
+# Build artefacts
+bin/
+dist/
+vendor/
+*.test
+*.out
+*.prof
+*.pprof
+coverage.html
+__debug_bin*
+
+# Local dev config & secrets (must never enter the image)
+agentsmith.env
+config.yaml
+.env
+.env.*
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Container / compose files (not needed inside the image)
+Dockerfile
+.dockerignore
+docker-compose.yaml
+docker-compose.yml
+
+# Docs (not needed at runtime)
+*.md
+LICENSE
+CHANGELOG.md
+SECURITY.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+
+# Logs
+*.log

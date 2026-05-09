@@ -101,6 +101,65 @@ On any backend detail page, click the **▶ Call Log** button (fixed bottom-righ
 
 > **Keep the admin port off public networks.** It exposes internal state and full request/response payloads with no authentication. Bind it to `127.0.0.1`, a private interface, or a sidecar-only network.
 
+## Deployment
+
+agentsmith ships with a hardened multi-stage `Dockerfile` (distroless/static base, stripped static binary, runs as non-root UID 65532). The final image is ~17–20 MB.
+
+### Docker
+
+Pre-built multi-arch images (amd64 + arm64) are published to Docker Hub:
+
+```bash
+docker pull sebastienmelki/agentsmith:latest
+
+docker run --rm \
+  -p 3001:3001 -p 3002:3002 \
+  -v "$PWD/config.yaml:/etc/agentsmith/config.yaml:ro" \
+  --env-file agentsmith.env \
+  --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+  sebastienmelki/agentsmith:latest
+```
+
+Available tags: `latest` (last released `vX.Y.Z`), `X.Y.Z` / `X.Y` / `X` (semver), `edge` (latest `main`), and `sha-<short>` for traceability. To build locally instead: `docker build -t agentsmith:local .`
+
+### Docker Compose
+
+```bash
+cp examples/dodo-and-slack/config.yaml config.yaml
+cp examples/dodo-and-slack/.env.example agentsmith.env
+$EDITOR agentsmith.env
+docker compose up --build
+```
+
+`docker-compose.yaml` runs the container read-only, with all capabilities dropped and `no-new-privileges`.
+
+### Railway / Fly.io / Render
+
+Any platform that builds from a `Dockerfile` works out of the box:
+
+1. **Fork** this repo (or push your own clone).
+2. Copy an example to `config.yaml` and **commit it** — the root `config.yaml` is gitignored, so use `git add -f config.yaml`.
+3. Connect the repo to your platform; it will detect the `Dockerfile` and build automatically.
+4. Set each `${VAR}` referenced by your `config.yaml` as an environment variable / secret in the platform UI (e.g. `DODO_PAYMENTS_API_KEY`, `SLACK_TOKEN`). agentsmith refuses to start if any are unset.
+5. **Bind to the platform's port.** Railway, Fly.io, and Render inject `$PORT` and route a single public port to the service. Update `config.yaml`:
+
+   ```yaml
+   listenAddr: ":${PORT}"
+   ```
+
+   The admin server still listens on `:3002` inside the container; on single-port PaaS it's reachable only from inside the network (which is what you want).
+
+### AWS / VPS / Kubernetes
+
+Push the image to your registry of choice (ECR, GHCR, Docker Hub) and run it like any other container:
+
+```bash
+docker tag agentsmith:latest <registry>/agentsmith:<tag>
+docker push <registry>/agentsmith:<tag>
+```
+
+Liveness/readiness probes should target `GET /healthz` on the admin port (`:3002`).
+
 ## Non-goals
 
 agentsmith is intentionally a small federation primitive, not a full API gateway. The following are **not** planned and are likely to be declined as feature requests:
