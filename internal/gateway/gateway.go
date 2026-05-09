@@ -664,6 +664,8 @@ type headerInjector struct {
 	headers map[string]string
 }
 
+// RoundTrip injects this target's headers and forwards the request to the
+// underlying transport. Per-target headers never leak across backends.
 func (h *headerInjector) RoundTrip(req *http.Request) (*http.Response, error) {
 	for k, v := range h.headers {
 		req.Header.Set(k, v)

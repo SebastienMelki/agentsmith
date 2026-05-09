@@ -16,7 +16,7 @@ import (
 // boilerplate of building a context-aware request.
 func doGet(t *testing.T, client *http.Client, url string) {
 	t.Helper()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}

@@ -17,7 +17,7 @@ import (
 // repeating context boilerplate at every call site.
 func newReq(t *testing.T, path string) *http.Request {
 	t.Helper()
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, path, http.NoBody)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
@@ -52,7 +52,7 @@ func (f *fakeGateway) AggregateMetrics() gateway.Metrics {
 	return gateway.Metrics{}
 }
 
-func (f *fakeGateway) SubscribeLogs(_ string) (chan gateway.CallEntry, func(), bool) {
+func (f *fakeGateway) SubscribeLogs(_ string) (ch chan gateway.CallEntry, unsub func(), ok bool) {
 	return nil, nil, false
 }
 

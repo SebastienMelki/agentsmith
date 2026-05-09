@@ -12,8 +12,8 @@ import (
 // connectedCount returns the number of backends in StateConnected.
 func connectedCount(backends []gateway.BackendDetail) int {
 	n := 0
-	for _, b := range backends {
-		if b.State == gateway.StateConnected {
+	for i := range backends {
+		if backends[i].State == gateway.StateConnected {
 			n++
 		}
 	}
