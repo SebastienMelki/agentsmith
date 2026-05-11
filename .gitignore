@@ -36,6 +36,9 @@ __debug_bin*
 agentsmith.env
 /config.yaml
 
+# working planning docs (not versioned)
+/plan.md
+
 # ----- editors -----
 .idea/
 .vscode/
