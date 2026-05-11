@@ -102,10 +102,10 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 		&#9656; Call Log
 	</button>
 	<!-- dialog -->
-	<dialog id="log-dialog" class="log-dialog">
+	<dialog id="log-dialog" class="log-dialog" aria-labelledby="log-dialog-title" aria-modal="true">
 		<article style="margin: 0; height: 100%; display: flex; flex-direction: column;">
 			<header style="display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--pico-muted-border-color); flex-shrink: 0;">
-				<strong>Call Log &mdash; { backendName }</strong>
+				<strong id="log-dialog-title">Call Log &mdash; { backendName }</strong>
 				<button
 					class="secondary outline"
 					style="margin: 0; padding: 0.2rem 0.7rem; font-size: 0.85em;"
@@ -115,93 +115,535 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 			<div
 				id="call-log"
 				data-stream-url={ "/ui/backends/" + backendName + "/logs/stream" }
-				style="flex: 1; overflow-y: auto; padding: 0.75rem 1.25rem; font-size: 0.8em;"
+				data-backend-name={ backendName }
+				role="region"
+				aria-label="Call log entries"
+				style="flex: 1; overflow-y: auto; padding: 0 1.25rem 0.75rem; font-size: 0.8em; position: relative;"
 			>
-				if len(entries) == 0 {
-					<p class="dim" id="log-empty"><em>No calls recorded yet.</em></p>
-				} else {
-					for _, e := range entries {
-						@callLogRow(e)
+				<div id="log-sticky" class="log-sticky">
+					<svg id="log-sparkline" class="log-sparkline" role="img" aria-label="Call volume timeline" preserveAspectRatio="none"></svg>
+					<div id="log-filter-bar" class="filter-bar">
+						<div class="filter-group" role="group" aria-label="Status">
+							<button type="button" class="filter-pill" data-status="all" aria-pressed="true">All</button>
+							<button type="button" class="filter-pill" data-status="ok">OK</button>
+							<button type="button" class="filter-pill" data-status="err">Error</button>
+						</div>
+						<div class="filter-tools">
+							<div id="log-tool-chips" class="tool-chips" role="list" aria-label="Selected tools"></div>
+							<input
+								id="log-tool-input"
+								type="text"
+								class="filter-tool-input"
+								placeholder="+ tool…"
+								list="log-tool-list"
+								autocomplete="off"
+								aria-label="Add tool filter"
+							/>
+							<datalist id="log-tool-list"></datalist>
+						</div>
+						<div class="filter-group" role="group" aria-label="Duration">
+							<button type="button" class="filter-pill dur-pill dur-fast" data-duration="0" aria-pressed="true">≥ 0</button>
+							<button type="button" class="filter-pill dur-pill dur-ok"   data-duration="500">&gt; 500ms</button>
+							<button type="button" class="filter-pill dur-pill dur-slow" data-duration="2000">&gt; 2s</button>
+							<button type="button" class="filter-pill dur-pill dur-bad"  data-duration="5000">&gt; 5s</button>
+						</div>
+						<input
+							id="log-search"
+							type="search"
+							class="filter-search"
+							placeholder="Search…"
+							autocomplete="off"
+							aria-label="Search call log"
+						/>
+						<button type="button" id="log-pause-btn" class="filter-pause" aria-pressed="false">⏸ Pause</button>
+					</div>
+				</div>
+				<div id="log-virtual" class="log-virtual">
+					if len(entries) == 0 {
+						<p class="dim" id="log-empty"><em>No calls recorded yet.</em></p>
+					} else {
+						for _, e := range entries {
+							@callLogRow(e)
+						}
 					}
-				}
+				</div>
+				<div id="log-aria-live" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
 			</div>
 		</article>
 	</dialog>
 	<script>
 		(function () {
-			const dialog = document.getElementById('log-dialog');
-			const log    = document.getElementById('call-log');
-			let esStarted = false;
+			const dialog    = document.getElementById('log-dialog');
+			const callLog   = document.getElementById('call-log');
+			const virtualEl = document.getElementById('log-virtual');
+			const stickyEl  = document.getElementById('log-sticky');
+			const sparkline = document.getElementById('log-sparkline');
+			const filterBar = document.getElementById('log-filter-bar');
+			const searchInput = document.getElementById('log-search');
+			const toolInput   = document.getElementById('log-tool-input');
+			const toolChips   = document.getElementById('log-tool-chips');
+			const toolList    = document.getElementById('log-tool-list');
+			const pauseBtn    = document.getElementById('log-pause-btn');
+			const openBtn     = document.getElementById('log-open-btn');
+			const ariaLive    = document.getElementById('log-aria-live');
+			const backendName = callLog.dataset.backendName || '';
+			const lsKey       = 'agentsmith:filter:' + backendName;
 			const dtFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
 
-			// On first dialog open: lazily start SSE and upgrade any
-			// server-rendered pending rows. Idempotent on subsequent opens.
-			dialog.addEventListener('toggle', function () {
-				if (!esStarted) { esStarted = true; startSSE(); }
-				log.querySelectorAll('[data-json-pending="1"]').forEach(upgradePending);
-			});
+			// ── state ────────────────────────────────────
+			const entries = [];      // newest-first
+			const buffered = [];     // received while paused, newest-first
+			const filter = {
+				status: 'all',         // 'all' | 'ok' | 'err'
+				tools: new Set(),
+				durationMin: 0,
+				search: '',
+				bucketRange: null,     // [t0ms, t1ms] or null
+			};
+			let paused      = false;
+			let initialized = false;
+			let esStarted   = false;
+			let viewItems   = [];    // [{type:'row',index} | {type:'group',indices,key}]
+			const rendered  = new Map(); // viewIdx -> {el}
+			const expandedGroups = new Set();
+			let rowHeight   = 32;
+			let topSpacer   = null;
+			let bottomSpacer = null;
+			let sparkTimer  = 0;
+			let scrollRaf   = 0;
+			let searchTimer = 0;
+			let lastFocused = null;
 
-			// Dismiss on backdrop click.
+			// ── lifecycle ────────────────────────────────
+			dialog.addEventListener('toggle', function () {
+				if (dialog.open) onOpen();
+				else onClose();
+			});
 			dialog.addEventListener('click', function (ev) {
 				if (ev.target === dialog) dialog.close();
 			});
+			dialog.addEventListener('close', onClose);
 
+			function onOpen() {
+				lastFocused = document.activeElement === openBtn ? openBtn : (lastFocused || openBtn);
+				if (!initialized) initOnce();
+				if (!esStarted) { esStarted = true; startSSE(); }
+				// pause is per-session (per plan): reset on each open and flush any buffer.
+				if (paused) { paused = false; }
+				if (buffered.length > 0) flushBuffer();
+				updatePauseLabel();
+				document.addEventListener('keydown', onKeydownTrap);
+				// focus first focusable inside dialog (defer past the toggle event)
+				setTimeout(function () {
+					const f = focusables();
+					if (f.length > 0) f[0].focus();
+				}, 0);
+			}
+
+			function onClose() {
+				document.removeEventListener('keydown', onKeydownTrap);
+				if (lastFocused && typeof lastFocused.focus === 'function') {
+					try { lastFocused.focus(); } catch (_) {}
+				}
+			}
+
+			function initOnce() {
+				initialized = true;
+				// 1. Pull data out of any server-rendered seed rows.
+				const seedRows = virtualEl.querySelectorAll('.log-row');
+				seedRows.forEach(function (row) { entries.push(entryFromRow(row)); });
+				// 2. Replace #log-virtual content with virtualization scaffold.
+				virtualEl.innerHTML = '';
+				topSpacer = document.createElement('div');
+				topSpacer.className = 'log-spacer log-spacer-top';
+				bottomSpacer = document.createElement('div');
+				bottomSpacer.className = 'log-spacer log-spacer-bottom';
+				virtualEl.appendChild(topSpacer);
+				virtualEl.appendChild(bottomSpacer);
+				// 3. Load persisted filter state, then sync UI.
+				loadFilter();
+				syncFilterBarUI();
+				rebuildToolDatalist();
+				renderToolChips();
+				wireFilterBar();
+				// 4. First render.
+				compute();
+				renderSparklineNow();
+				callLog.addEventListener('scroll', onScroll, { passive: true });
+				window.addEventListener('resize', scheduleSparkline);
+			}
+
+			// ── entry adapters ──────────────────────────
+			function entryFromRow(row) {
+				const ds = row.dataset || {};
+				return {
+					toolName:   ds.toolName  || '',
+					request:    ds.request   || '',
+					response:   ds.response  || '',
+					error:      ds.error     || '',
+					success:    ds.success === '1',
+					durationMs: +ds.durationMs || 0,
+					calledAt:   ds.calledAt  || '',
+					calledAtMs: Date.parse(ds.calledAt || '') || 0,
+				};
+			}
+			function entryFromEvent(e) {
+				return {
+					toolName:   e.toolName   || '',
+					request:    e.request    || '',
+					response:   e.response   || '',
+					error:      e.error      || '',
+					success:    !!e.success,
+					durationMs: +e.durationMs || 0,
+					calledAt:   e.calledAt   || '',
+					calledAtMs: Date.parse(e.calledAt || '') || 0,
+				};
+			}
+
+			// ── SSE ─────────────────────────────────────
 			function startSSE() {
-				const es = new EventSource(log.dataset.streamUrl);
+				const es = new EventSource(callLog.dataset.streamUrl);
 				es.addEventListener('log', function (ev) {
-					const e = JSON.parse(ev.data);
-					const empty = document.getElementById('log-empty');
-					if (empty) empty.remove();
-					const row = buildRow(e);
-					log.insertBefore(row, log.firstChild);
-					upgradePending(row);
-					while (log.children.length > 500) log.removeChild(log.lastChild);
+					const entry = entryFromEvent(JSON.parse(ev.data));
+					if (paused) {
+						buffered.unshift(entry);
+						updatePauseLabel();
+						return;
+					}
+					acceptNewEntries([entry]);
 				});
 			}
 
-			function durationTierClassJS(ms) {
-				if (ms < 500)  return 'dur-fast';
-				if (ms < 2000) return 'dur-ok';
-				if (ms < 5000) return 'dur-slow';
-				return 'dur-bad';
+			function acceptNewEntries(newOnes) {
+				if (!newOnes || newOnes.length === 0) return;
+				// keep scroll position stable when prepending while scrolled.
+				const wasScrolled = callLog.scrollTop > 0;
+				for (let i = 0; i < newOnes.length; i++) entries.unshift(newOnes[i]);
+				while (entries.length > 500) entries.pop();
+				rebuildToolDatalist();
+				if (wasScrolled) callLog.scrollTop += newOnes.length * rowHeight;
+				compute();
+				scheduleSparkline();
+				announce(newOnes.length === 1 ? '1 new call' : (newOnes.length + ' new calls'));
 			}
 
-			function buildRow(e) {
-				const ok = !!e.success;
+			function flushBuffer() {
+				if (buffered.length === 0) return;
+				const newOnes = buffered.slice(); // newest-first already
+				buffered.length = 0;
+				acceptNewEntries(newOnes);
+			}
+
+			// ── filter persistence ──────────────────────
+			function loadFilter() {
+				try {
+					const raw = localStorage.getItem(lsKey);
+					if (!raw) return;
+					const saved = JSON.parse(raw);
+					if (saved.status === 'all' || saved.status === 'ok' || saved.status === 'err') filter.status = saved.status;
+					if (Array.isArray(saved.tools)) filter.tools = new Set(saved.tools);
+					if (typeof saved.durationMin === 'number') filter.durationMin = saved.durationMin;
+					if (typeof saved.search === 'string') {
+						filter.search = saved.search.toLowerCase();
+						searchInput.value = saved.search;
+					}
+				} catch (_) { /* tolerate stale entries */ }
+			}
+			function saveFilter() {
+				try {
+					localStorage.setItem(lsKey, JSON.stringify({
+						status:      filter.status,
+						tools:       Array.from(filter.tools),
+						durationMin: filter.durationMin,
+						search:      searchInput.value || '',
+					}));
+				} catch (_) {}
+			}
+
+			// ── filter bar UI ───────────────────────────
+			function syncFilterBarUI() {
+				filterBar.querySelectorAll('[data-status]').forEach(function (b) {
+					b.setAttribute('aria-pressed', b.dataset.status === filter.status ? 'true' : 'false');
+				});
+				filterBar.querySelectorAll('[data-duration]').forEach(function (b) {
+					b.setAttribute('aria-pressed', +b.dataset.duration === filter.durationMin ? 'true' : 'false');
+				});
+				renderToolChips();
+			}
+			function wireFilterBar() {
+				filterBar.querySelectorAll('[data-status]').forEach(function (b) {
+					b.addEventListener('click', function () {
+						filter.status = b.dataset.status;
+						syncFilterBarUI();
+						compute();
+						saveFilter();
+					});
+				});
+				filterBar.querySelectorAll('[data-duration]').forEach(function (b) {
+					b.addEventListener('click', function () {
+						filter.durationMin = +b.dataset.duration;
+						syncFilterBarUI();
+						compute();
+						saveFilter();
+					});
+				});
+				searchInput.addEventListener('input', function () {
+					clearTimeout(searchTimer);
+					searchTimer = setTimeout(function () {
+						filter.search = (searchInput.value || '').toLowerCase();
+						compute();
+						saveFilter();
+					}, 150);
+				});
+				toolInput.addEventListener('keydown', function (ev) {
+					if (ev.key === 'Enter' || ev.key === ',') {
+						ev.preventDefault();
+						addToolFilter(toolInput.value);
+					} else if (ev.key === 'Backspace' && toolInput.value === '' && filter.tools.size > 0) {
+						const arr = Array.from(filter.tools);
+						filter.tools.delete(arr[arr.length - 1]);
+						renderToolChips(); compute(); saveFilter();
+					}
+				});
+				toolInput.addEventListener('change', function () {
+					if (toolInput.value) addToolFilter(toolInput.value);
+				});
+				pauseBtn.addEventListener('click', function () {
+					paused = !paused;
+					if (!paused) flushBuffer();
+					updatePauseLabel();
+				});
+			}
+			function addToolFilter(raw) {
+				const v = (raw || '').replace(/,$/, '').trim();
+				if (!v) return;
+				filter.tools.add(v);
+				toolInput.value = '';
+				renderToolChips(); compute(); saveFilter();
+			}
+			function renderToolChips() {
+				toolChips.innerHTML = '';
+				const arr = Array.from(filter.tools).sort();
+				arr.forEach(function (t) {
+					const chip = document.createElement('span');
+					chip.className = 'chip chip-removable';
+					chip.setAttribute('role', 'listitem');
+					const label = document.createElement('span');
+					label.textContent = t;
+					chip.appendChild(label);
+					const x = document.createElement('button');
+					x.type = 'button';
+					x.className = 'chip-remove';
+					x.textContent = '×';
+					x.setAttribute('aria-label', 'Remove ' + t);
+					x.addEventListener('click', function () {
+						filter.tools.delete(t);
+						renderToolChips(); compute(); saveFilter();
+					});
+					chip.appendChild(x);
+					toolChips.appendChild(chip);
+				});
+			}
+			function rebuildToolDatalist() {
+				const seen = new Set();
+				for (let i = 0; i < entries.length; i++) seen.add(entries[i].toolName);
+				const arr = Array.from(seen).sort();
+				toolList.innerHTML = '';
+				for (let i = 0; i < arr.length; i++) {
+					const opt = document.createElement('option');
+					opt.value = arr[i];
+					toolList.appendChild(opt);
+				}
+			}
+			function updatePauseLabel() {
+				if (paused) {
+					pauseBtn.textContent = buffered.length === 0
+						? '▶ Resume'
+						: '▶ Resume (' + buffered.length + ')';
+					pauseBtn.setAttribute('aria-pressed', 'true');
+				} else {
+					pauseBtn.textContent = '⏸ Pause';
+					pauseBtn.setAttribute('aria-pressed', 'false');
+				}
+			}
+
+			// ── filter + group → viewItems ──────────────
+			function matchesFilter(e) {
+				if (filter.status === 'ok' && !e.success) return false;
+				if (filter.status === 'err' && e.success) return false;
+				if (filter.tools.size > 0 && !filter.tools.has(e.toolName)) return false;
+				if (filter.durationMin > 0 && e.durationMs < filter.durationMin) return false;
+				if (filter.bucketRange) {
+					if (!e.calledAtMs) return false;
+					if (e.calledAtMs < filter.bucketRange[0] || e.calledAtMs > filter.bucketRange[1]) return false;
+				}
+				if (filter.search) {
+					const hay = (e.toolName + ' ' + e.request + ' ' + e.response + ' ' + e.error).toLowerCase();
+					if (hay.indexOf(filter.search) === -1) return false;
+				}
+				return true;
+			}
+
+			function compute() {
+				const filteredIdxs = [];
+				for (let i = 0; i < entries.length; i++) {
+					if (matchesFilter(entries[i])) filteredIdxs.push(i);
+				}
+				viewItems = [];
+				let i = 0;
+				while (i < filteredIdxs.length) {
+					const idx = filteredIdxs[i];
+					const e = entries[idx];
+					if (!e.success && e.error) {
+						let j = i + 1;
+						while (j < filteredIdxs.length) {
+							const e2 = entries[filteredIdxs[j]];
+							if (!e2.success && e2.toolName === e.toolName && e2.error === e.error) j++;
+							else break;
+						}
+						if (j - i >= 2) {
+							viewItems.push({
+								type: 'group',
+								indices: filteredIdxs.slice(i, j),
+								key: 'g:' + e.toolName + ':' + e.error,
+							});
+							i = j;
+							continue;
+						}
+					}
+					viewItems.push({ type: 'row', index: idx });
+					i++;
+				}
+				// Drop all currently mounted rows; their indices are stale after recompute.
+				rendered.forEach(function (r) { r.el.remove(); });
+				rendered.clear();
+				toggleEmptyState();
+				renderVisibleWindow();
+			}
+
+			function toggleEmptyState() {
+				const existing = document.getElementById('log-empty');
+				if (viewItems.length === 0) {
+					if (!existing) {
+						const p = document.createElement('p');
+						p.className = 'dim';
+						p.id = 'log-empty';
+						p.innerHTML = '<em>No matching calls.</em>';
+						virtualEl.insertBefore(p, bottomSpacer);
+					}
+				} else if (existing) {
+					existing.remove();
+				}
+			}
+
+			// ── virtualization ─────────────────────────
+			const OVERSCAN = 5;
+			function onScroll() {
+				if (scrollRaf) return;
+				scrollRaf = requestAnimationFrame(function () {
+					scrollRaf = 0;
+					renderVisibleWindow();
+				});
+			}
+			function virtualListTopInScroll() {
+				// offset of #log-virtual relative to the scrollable origin of #call-log
+				return virtualEl.getBoundingClientRect().top
+					- callLog.getBoundingClientRect().top
+					+ callLog.scrollTop;
+			}
+			function renderVisibleWindow() {
+				const listTop = virtualListTopInScroll();
+				const scrollTop = callLog.scrollTop;
+				const viewportH = callLog.clientHeight;
+				const relTop = Math.max(0, scrollTop - listTop);
+				const relBot = Math.max(relTop, scrollTop + viewportH - listTop);
+				let first = Math.max(0, Math.floor(relTop / rowHeight) - OVERSCAN);
+				let last  = Math.min(viewItems.length, Math.ceil(relBot / rowHeight) + OVERSCAN);
+				if (last < first) last = first;
+
+				// Unmount rows that fell outside the window.
+				rendered.forEach(function (entry, idx) {
+					if (idx < first || idx >= last) {
+						entry.el.remove();
+						rendered.delete(idx);
+					}
+				});
+				// Mount missing rows inside the window.
+				for (let idx = first; idx < last; idx++) {
+					if (rendered.has(idx)) continue;
+					const item = viewItems[idx];
+					if (!item) continue;
+					const el = buildViewItem(item);
+					el.dataset.viewIdx = String(idx);
+					insertInOrder(el, idx);
+					rendered.set(idx, { el: el });
+				}
+				// Measure row height once we have a sample.
+				if (rowHeight === 32 && rendered.size > 0) {
+					const sampleEntry = rendered.values().next().value;
+					const h = sampleEntry.el.getBoundingClientRect().height;
+					if (h > 0) rowHeight = h;
+				}
+				// Update spacers.
+				topSpacer.style.height = (first * rowHeight) + 'px';
+				bottomSpacer.style.height = Math.max(0, (viewItems.length - last) * rowHeight) + 'px';
+			}
+			function insertInOrder(el, idx) {
+				// Insert el before the next-greater-idx mounted row (or before the bottom spacer).
+				let after = topSpacer;
+				const children = virtualEl.children;
+				for (let i = 0; i < children.length; i++) {
+					const c = children[i];
+					if (c === topSpacer || c === bottomSpacer) continue;
+					const cidx = +(c.dataset.viewIdx || -1);
+					if (cidx > idx) { virtualEl.insertBefore(el, c); return; }
+					after = c;
+				}
+				virtualEl.insertBefore(el, bottomSpacer);
+			}
+
+			// ── row + group construction ───────────────
+			function buildViewItem(item) {
+				if (item.type === 'group') return buildGroupRow(item);
+				return buildRowFromEntry(entries[item.index]);
+			}
+
+			function buildRowFromEntry(e) {
 				const wrap = document.createElement('details');
 				wrap.className = 'log-row';
-				wrap.style.cssText = ok
+				wrap.style.cssText = e.success
 					? 'border-left:3px solid #1a4731;padding-left:0.5rem;margin-bottom:0.4rem;'
 					: 'border-left:3px solid #4a1010;padding-left:0.5rem;margin-bottom:0.4rem;';
 				wrap.dataset.jsonPending = '1';
-				wrap.dataset.request     = e.request  || '';
-				wrap.dataset.response    = e.response || '';
-				wrap.dataset.calledAt    = e.calledAt || '';
-				wrap.dataset.durationMs  = String(e.durationMs || 0);
-				wrap.dataset.success     = ok ? '1' : '0';
-				wrap.dataset.error       = e.error || '';
+				wrap.dataset.toolName    = e.toolName;
+				wrap.dataset.request     = e.request;
+				wrap.dataset.response    = e.response;
+				wrap.dataset.calledAt    = e.calledAt;
+				wrap.dataset.durationMs  = String(e.durationMs);
+				wrap.dataset.success     = e.success ? '1' : '0';
+				wrap.dataset.error       = e.error;
 
 				const summary = document.createElement('summary');
 				summary.className = 'log-summary';
 
 				const badge = document.createElement('span');
-				badge.className = 'state-badge ' + (ok ? 'state-connected' : 'state-error');
-				badge.textContent = ok ? 'ok' : 'err';
+				badge.className = 'state-badge ' + (e.success ? 'state-connected' : 'state-error');
+				badge.textContent = e.success ? 'ok' : 'err';
 				summary.appendChild(badge);
 
 				const code = document.createElement('code');
-				code.textContent = e.toolName || '';
+				code.textContent = e.toolName;
 				summary.appendChild(code);
 
 				const dur = document.createElement('span');
-				dur.className = durationTierClassJS(+e.durationMs || 0);
-				dur.textContent = (e.durationMs || 0) + 'ms';
+				dur.className = durationTierClassJS(e.durationMs);
+				dur.textContent = e.durationMs + 'ms';
 				summary.appendChild(dur);
 
 				const ts = document.createElement('span');
 				ts.className = 'dim';
 				ts.style.marginLeft = 'auto';
-				try { ts.textContent = new Date(e.calledAt).toLocaleTimeString(); }
+				try { ts.textContent = e.calledAt ? new Date(e.calledAt).toLocaleTimeString() : ''; }
 				catch (_) { ts.textContent = ''; }
 				summary.appendChild(ts);
 
@@ -217,14 +659,215 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				const payload = document.createElement('div');
 				payload.className = 'log-payload';
 				wrap.appendChild(payload);
+
+				// Lazy-upgrade payload to tabbed JSON tree only when the row is opened.
+				// Keeps the per-row mount cost light and lets virtualization unmount
+				// rows cheaply (their heavy DOM is gone when collapsed).
+				wrap.addEventListener('toggle', function () {
+					if (wrap.open && wrap.dataset.jsonPending === '1') upgradePending(wrap);
+				});
 				return wrap;
 			}
 
+			function buildGroupRow(item) {
+				const wrap = document.createElement('details');
+				wrap.className = 'log-row log-group';
+				wrap.dataset.groupKey = item.key;
+				wrap.style.cssText = 'border-left:3px solid #4a1010;padding-left:0.5rem;margin-bottom:0.4rem;';
+				if (expandedGroups.has(item.key)) wrap.open = true;
+				const first = entries[item.indices[0]];
+
+				const summary = document.createElement('summary');
+				summary.className = 'log-summary';
+				const badge = document.createElement('span');
+				badge.className = 'state-badge state-error';
+				badge.textContent = 'err';
+				summary.appendChild(badge);
+				const code = document.createElement('code');
+				code.textContent = first.toolName;
+				summary.appendChild(code);
+				const chip = document.createElement('span');
+				chip.className = 'chip chip-group';
+				chip.textContent = '× ' + item.indices.length;
+				chip.title = item.indices.length + ' consecutive identical errors';
+				summary.appendChild(chip);
+				const errText = document.createElement('span');
+				errText.style.marginLeft = 'auto';
+				errText.style.color = '#eb5757';
+				errText.textContent = first.error;
+				summary.appendChild(errText);
+				wrap.appendChild(summary);
+
+				const body = document.createElement('div');
+				body.className = 'log-group-body';
+				item.indices.forEach(function (idx) {
+					body.appendChild(buildRowFromEntry(entries[idx]));
+				});
+				wrap.appendChild(body);
+
+				wrap.addEventListener('toggle', function () {
+					if (wrap.open) expandedGroups.add(item.key);
+					else expandedGroups.delete(item.key);
+				});
+				return wrap;
+			}
+
+			function durationTierClassJS(ms) {
+				if (ms < 500)  return 'dur-fast';
+				if (ms < 2000) return 'dur-ok';
+				if (ms < 5000) return 'dur-slow';
+				return 'dur-bad';
+			}
+
+			// ── sparkline ──────────────────────────────
+			function scheduleSparkline() {
+				if (sparkTimer) return;
+				sparkTimer = setTimeout(function () {
+					sparkTimer = 0;
+					renderSparklineNow();
+				}, 250);
+			}
+			function renderSparklineNow() {
+				const N = 30;
+				while (sparkline.firstChild) sparkline.removeChild(sparkline.firstChild);
+				if (entries.length === 0) return;
+				let minT = Infinity, maxT = -Infinity;
+				for (let i = 0; i < entries.length; i++) {
+					const t = entries[i].calledAtMs;
+					if (!t) continue;
+					if (t < minT) minT = t;
+					if (t > maxT) maxT = t;
+				}
+				if (!isFinite(minT) || !isFinite(maxT)) return;
+				if (maxT - minT < 1000) maxT = minT + 1000;
+				const span = maxT - minT;
+				const buckets = new Array(N);
+				for (let i = 0; i < N; i++) {
+					buckets[i] = {
+						ok: 0, err: 0,
+						t0: minT + (span * i) / N,
+						t1: minT + (span * (i + 1)) / N,
+					};
+				}
+				for (let i = 0; i < entries.length; i++) {
+					const t = entries[i].calledAtMs;
+					if (!t) continue;
+					let b = Math.floor(((t - minT) / span) * N);
+					if (b < 0) b = 0; if (b >= N) b = N - 1;
+					if (entries[i].success) buckets[b].ok++;
+					else buckets[b].err++;
+				}
+				let maxBucket = 0;
+				for (let i = 0; i < N; i++) {
+					const total = buckets[i].ok + buckets[i].err;
+					if (total > maxBucket) maxBucket = total;
+				}
+				if (maxBucket === 0) maxBucket = 1;
+				const w = sparkline.clientWidth || 600;
+				const h = 40;
+				sparkline.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+				const barW = w / N;
+				for (let i = 0; i < N; i++) {
+					const b = buckets[i];
+					const total = b.ok + b.err;
+					const totalH = (total / maxBucket) * (h - 2);
+					const errH   = total > 0 ? (b.err / total) * totalH : 0;
+					const okH    = totalH - errH;
+					const x = i * barW + 0.5;
+					const barWidth = Math.max(0, barW - 1);
+					const isActive = !!(filter.bucketRange && Math.abs(filter.bucketRange[0] - b.t0) < 0.5);
+
+					const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+					g.classList.add('spark-bucket');
+					if (isActive) g.classList.add('active');
+					g.dataset.bucketIdx = String(i);
+					g.style.cursor = 'pointer';
+
+					const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+					title.textContent = fmtTimeRange(b.t0, b.t1) + ' · ' + b.ok + ' ok, ' + b.err + ' err';
+					g.appendChild(title);
+
+					if (okH > 0) {
+						const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+						r.setAttribute('x', String(x));
+						r.setAttribute('y', String(h - okH));
+						r.setAttribute('width', String(barWidth));
+						r.setAttribute('height', String(okH));
+						r.setAttribute('class', 'spark-ok');
+						g.appendChild(r);
+					}
+					if (errH > 0) {
+						const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+						r.setAttribute('x', String(x));
+						r.setAttribute('y', String(h - okH - errH));
+						r.setAttribute('width', String(barWidth));
+						r.setAttribute('height', String(errH));
+						r.setAttribute('class', 'spark-err');
+						g.appendChild(r);
+					}
+					// invisible full-height hit target so empty buckets remain clickable
+					const hit = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+					hit.setAttribute('x', String(x));
+					hit.setAttribute('y', '0');
+					hit.setAttribute('width', String(barWidth));
+					hit.setAttribute('height', String(h));
+					hit.setAttribute('fill', 'transparent');
+					g.appendChild(hit);
+
+					g.addEventListener('click', function () {
+						if (filter.bucketRange && Math.abs(filter.bucketRange[0] - b.t0) < 0.5) {
+							filter.bucketRange = null;
+						} else {
+							filter.bucketRange = [b.t0, b.t1];
+						}
+						compute();
+						renderSparklineNow();
+					});
+					sparkline.appendChild(g);
+				}
+			}
+			function fmtTimeRange(t0, t1) {
+				try {
+					const a = new Date(t0).toLocaleTimeString();
+					const b = new Date(t1).toLocaleTimeString();
+					return a + '–' + b;
+				} catch (_) { return ''; }
+			}
+
+			// ── focus trap ─────────────────────────────
+			function focusables() {
+				return Array.from(dialog.querySelectorAll(
+					'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+				)).filter(function (el) {
+					if (el.hasAttribute('disabled')) return false;
+					const rect = el.getBoundingClientRect();
+					return rect.width > 0 && rect.height > 0;
+				});
+			}
+			function onKeydownTrap(ev) {
+				if (!dialog.open) return;
+				if (ev.key !== 'Tab') return;
+				const f = focusables();
+				if (f.length === 0) return;
+				const first = f[0], last = f[f.length - 1];
+				const active = document.activeElement;
+				if (ev.shiftKey && (active === first || !dialog.contains(active))) {
+					ev.preventDefault(); last.focus();
+				} else if (!ev.shiftKey && (active === last || !dialog.contains(active))) {
+					ev.preventDefault(); first.focus();
+				}
+			}
+
+			function announce(text) {
+				ariaLive.textContent = '';
+				setTimeout(function () { ariaLive.textContent = text; }, 50);
+			}
+
+			// ── payload upgrade (Stage 3 — preserved) ──
 			function safeParse(s) {
 				try { return s ? JSON.parse(s) : null; }
 				catch (_) { return null; }
 			}
-
 			function unwrapEnvelope(val) {
 				if (!val || typeof val !== 'object') return { envelope: null, payload: val };
 				if (!Array.isArray(val.content) || val.content.length === 0)
@@ -239,7 +882,6 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				}
 				return { envelope: null, payload: val };
 			}
-
 			function upgradePending(row) {
 				if (row.dataset.jsonPending !== '1') return;
 				const reqVal  = safeParse(row.dataset.request);
@@ -267,11 +909,9 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 
 			function buildTabbed(ctx) {
 				const frag = document.createDocumentFragment();
-
 				const tabs = document.createElement('div');
 				tabs.className = 'log-tabs';
 				tabs.setAttribute('role', 'tablist');
-
 				const panels = {};
 				const tabKeys = ['request', 'response', 'meta', 'raw'];
 				const tabLabels = { request: 'Request', response: 'Response', meta: 'Meta', raw: 'Raw' };
@@ -287,7 +927,6 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 					btn.addEventListener('click', function () { selectTab(k); });
 					tabs.appendChild(btn);
 				});
-
 				function selectTab(name) {
 					tabs.querySelectorAll('.log-tab').forEach(function (b) {
 						b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');
@@ -297,7 +936,6 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 						else panels[k].setAttribute('hidden', '');
 					});
 				}
-
 				frag.appendChild(tabs);
 
 				// Request panel
@@ -374,7 +1012,6 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				if (hidden) p.setAttribute('hidden', '');
 				return p;
 			}
-
 			function metaRow(label, value) {
 				const row = document.createElement('div');
 				const l = document.createElement('span');
@@ -385,24 +1022,19 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				else { const v = document.createElement('span'); v.textContent = value; row.appendChild(v); }
 				return row;
 			}
-
 			function formatCalledAt(iso) {
 				if (!iso) return '';
 				try {
 					const d = new Date(iso);
 					return dtFmt.format(d) + ' (' + d.toISOString() + ')';
-				} catch (_) {
-					return iso;
-				}
+				} catch (_) { return iso; }
 			}
 
-			// ── jsonTree (vanilla, no deps) ─────────────────────────────
-
+			// ── jsonTree (Stage 3 — preserved) ──────────
 			function jsonTree(container, value, opts) {
 				const collapsedAtDepth = (opts && typeof opts.collapsedAtDepth === 'number') ? opts.collapsedAtDepth : 2;
 				container.appendChild(renderNode(value, [], 0, collapsedAtDepth));
 			}
-
 			function renderNode(value, path, depth, collapseAt) {
 				if (value === null) return leafSpan('null', 'json-null', value);
 				const t = Array.isArray(value) ? 'array' : typeof value;
@@ -413,7 +1045,6 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				if (t === 'object')  return renderObject(value, path, depth, collapseAt);
 				return leafSpan(String(value), 'json-null', value);
 			}
-
 			function leafSpan(text, cls, raw) {
 				const s = document.createElement('span');
 				s.className = cls + ' json-leaf';
@@ -425,7 +1056,6 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				});
 				return s;
 			}
-
 			function renderString(value) {
 				const TRUNC = 200;
 				if (value.length > TRUNC) {
@@ -453,18 +1083,15 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				wrap.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(value); });
 				return wrap;
 			}
-
 			function renderObject(obj, path, depth, collapseAt) {
 				const keys = Object.keys(obj);
 				const wrap = document.createElement('span');
-
 				const det = document.createElement('details');
 				if (depth < collapseAt) det.open = true;
 				const sum = document.createElement('summary');
 				sum.className = 'json-summary';
 				sum.textContent = '{ ' + keys.length + (keys.length === 1 ? ' field' : ' fields') + ' }';
 				det.appendChild(sum);
-
 				const children = document.createElement('div');
 				children.className = 'json-children';
 				keys.forEach(function (k) {
@@ -474,7 +1101,6 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				wrap.appendChild(det);
 				return wrap;
 			}
-
 			function renderArray(arr, path, depth, collapseAt) {
 				const wrap = document.createElement('span');
 				const det = document.createElement('details');
@@ -483,7 +1109,6 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				sum.className = 'json-summary';
 				sum.textContent = '[ ' + arr.length + (arr.length === 1 ? ' item' : ' items') + ' ]';
 				det.appendChild(sum);
-
 				const children = document.createElement('div');
 				children.className = 'json-children';
 				arr.forEach(function (item, i) {
@@ -493,18 +1118,14 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				wrap.appendChild(det);
 				return wrap;
 			}
-
 			function buildKeyedRow(key, value, path, depth, collapseAt) {
 				const row = document.createElement('div');
 				row.className = 'json-row';
-
 				const keyEl = document.createElement('span');
 				keyEl.className = 'json-key';
 				keyEl.textContent = key;
 				row.appendChild(keyEl);
-
 				row.appendChild(renderNode(value, path, depth, collapseAt));
-
 				const copyPath = document.createElement('button');
 				copyPath.type = 'button';
 				copyPath.className = 'json-copy-path';
@@ -517,18 +1138,14 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				row.appendChild(copyPath);
 				return row;
 			}
-
 			function buildIndexRow(idx, value, path, depth, collapseAt) {
 				const row = document.createElement('div');
 				row.className = 'json-row';
-
 				const keyEl = document.createElement('span');
 				keyEl.className = 'json-key';
 				keyEl.textContent = '[' + idx + ']';
 				row.appendChild(keyEl);
-
 				row.appendChild(renderNode(value, path, depth, collapseAt));
-
 				const copyPath = document.createElement('button');
 				copyPath.type = 'button';
 				copyPath.className = 'json-copy-path';
@@ -541,7 +1158,6 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				row.appendChild(copyPath);
 				return row;
 			}
-
 			function pathToString(path) {
 				let s = '';
 				path.forEach(function (seg) {
@@ -550,7 +1166,6 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 				});
 				return s;
 			}
-
 			function copyText(text) {
 				try {
 					if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -580,6 +1195,7 @@ templ callLogRow(e gateway.CallEntry) {
 		class="log-row"
 		style={ logRowBorder(e.Success) }
 		data-json-pending="1"
+		data-tool-name={ e.ToolName }
 		data-request={ e.Request }
 		data-response={ e.Response }
 		data-called-at={ e.CalledAt.UTC().Format(time.RFC3339Nano) }

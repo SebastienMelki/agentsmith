@@ -405,14 +405,14 @@ func callLogDialog(backendName string, entries []gateway.CallEntry) templ.Compon
 			templ_7745c5c3_Var18 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<!-- sticky trigger button --><button id=\"log-open-btn\" class=\"log-open-btn\" onclick=\"document.getElementById('log-dialog').showModal()\">&#9656; Call Log</button><!-- dialog --><dialog id=\"log-dialog\" class=\"log-dialog\"><article style=\"margin: 0; height: 100%; display: flex; flex-direction: column;\"><header style=\"display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--pico-muted-border-color); flex-shrink: 0;\"><strong>Call Log &mdash; ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<!-- sticky trigger button --><button id=\"log-open-btn\" class=\"log-open-btn\" onclick=\"document.getElementById('log-dialog').showModal()\">&#9656; Call Log</button><!-- dialog --><dialog id=\"log-dialog\" class=\"log-dialog\" aria-labelledby=\"log-dialog-title\" aria-modal=\"true\"><article style=\"margin: 0; height: 100%; display: flex; flex-direction: column;\"><header style=\"display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--pico-muted-border-color); flex-shrink: 0;\"><strong id=\"log-dialog-title\">Call Log &mdash; ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(backendName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 108, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 108, Col: 64}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -431,12 +431,25 @@ func callLogDialog(backendName string, entries []gateway.CallEntry) templ.Compon
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" style=\"flex: 1; overflow-y: auto; padding: 0.75rem 1.25rem; font-size: 0.8em;\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" data-backend-name=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var21 string
+		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(backendName)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 118, Col: 35}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" role=\"region\" aria-label=\"Call log entries\" style=\"flex: 1; overflow-y: auto; padding: 0 1.25rem 0.75rem; font-size: 0.8em; position: relative;\"><div id=\"log-sticky\" class=\"log-sticky\"><svg id=\"log-sparkline\" class=\"log-sparkline\" role=\"img\" aria-label=\"Call volume timeline\" preserveAspectRatio=\"none\"></svg><div id=\"log-filter-bar\" class=\"filter-bar\"><div class=\"filter-group\" role=\"group\" aria-label=\"Status\"><button type=\"button\" class=\"filter-pill\" data-status=\"all\" aria-pressed=\"true\">All</button> <button type=\"button\" class=\"filter-pill\" data-status=\"ok\">OK</button> <button type=\"button\" class=\"filter-pill\" data-status=\"err\">Error</button></div><div class=\"filter-tools\"><div id=\"log-tool-chips\" class=\"tool-chips\" role=\"list\" aria-label=\"Selected tools\"></div><input id=\"log-tool-input\" type=\"text\" class=\"filter-tool-input\" placeholder=\"+ tool…\" list=\"log-tool-list\" autocomplete=\"off\" aria-label=\"Add tool filter\"> <datalist id=\"log-tool-list\"></datalist></div><div class=\"filter-group\" role=\"group\" aria-label=\"Duration\"><button type=\"button\" class=\"filter-pill dur-pill dur-fast\" data-duration=\"0\" aria-pressed=\"true\">≥ 0</button> <button type=\"button\" class=\"filter-pill dur-pill dur-ok\" data-duration=\"500\">&gt; 500ms</button> <button type=\"button\" class=\"filter-pill dur-pill dur-slow\" data-duration=\"2000\">&gt; 2s</button> <button type=\"button\" class=\"filter-pill dur-pill dur-bad\" data-duration=\"5000\">&gt; 5s</button></div><input id=\"log-search\" type=\"search\" class=\"filter-search\" placeholder=\"Search…\" autocomplete=\"off\" aria-label=\"Search call log\"> <button type=\"button\" id=\"log-pause-btn\" class=\"filter-pause\" aria-pressed=\"false\">⏸ Pause</button></div></div><div id=\"log-virtual\" class=\"log-virtual\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(entries) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<p class=\"dim\" id=\"log-empty\"><em>No calls recorded yet.</em></p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<p class=\"dim\" id=\"log-empty\"><em>No calls recorded yet.</em></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -448,7 +461,7 @@ func callLogDialog(backendName string, entries []gateway.CallEntry) templ.Compon
 				}
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "</div></article></dialog><script>\n\t\t(function () {\n\t\t\tconst dialog = document.getElementById('log-dialog');\n\t\t\tconst log    = document.getElementById('call-log');\n\t\t\tlet esStarted = false;\n\t\t\tconst dtFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });\n\n\t\t\t// On first dialog open: lazily start SSE and upgrade any\n\t\t\t// server-rendered pending rows. Idempotent on subsequent opens.\n\t\t\tdialog.addEventListener('toggle', function () {\n\t\t\t\tif (!esStarted) { esStarted = true; startSSE(); }\n\t\t\t\tlog.querySelectorAll('[data-json-pending=\"1\"]').forEach(upgradePending);\n\t\t\t});\n\n\t\t\t// Dismiss on backdrop click.\n\t\t\tdialog.addEventListener('click', function (ev) {\n\t\t\t\tif (ev.target === dialog) dialog.close();\n\t\t\t});\n\n\t\t\tfunction startSSE() {\n\t\t\t\tconst es = new EventSource(log.dataset.streamUrl);\n\t\t\t\tes.addEventListener('log', function (ev) {\n\t\t\t\t\tconst e = JSON.parse(ev.data);\n\t\t\t\t\tconst empty = document.getElementById('log-empty');\n\t\t\t\t\tif (empty) empty.remove();\n\t\t\t\t\tconst row = buildRow(e);\n\t\t\t\t\tlog.insertBefore(row, log.firstChild);\n\t\t\t\t\tupgradePending(row);\n\t\t\t\t\twhile (log.children.length > 500) log.removeChild(log.lastChild);\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction durationTierClassJS(ms) {\n\t\t\t\tif (ms < 500)  return 'dur-fast';\n\t\t\t\tif (ms < 2000) return 'dur-ok';\n\t\t\t\tif (ms < 5000) return 'dur-slow';\n\t\t\t\treturn 'dur-bad';\n\t\t\t}\n\n\t\t\tfunction buildRow(e) {\n\t\t\t\tconst ok = !!e.success;\n\t\t\t\tconst wrap = document.createElement('details');\n\t\t\t\twrap.className = 'log-row';\n\t\t\t\twrap.style.cssText = ok\n\t\t\t\t\t? 'border-left:3px solid #1a4731;padding-left:0.5rem;margin-bottom:0.4rem;'\n\t\t\t\t\t: 'border-left:3px solid #4a1010;padding-left:0.5rem;margin-bottom:0.4rem;';\n\t\t\t\twrap.dataset.jsonPending = '1';\n\t\t\t\twrap.dataset.request     = e.request  || '';\n\t\t\t\twrap.dataset.response    = e.response || '';\n\t\t\t\twrap.dataset.calledAt    = e.calledAt || '';\n\t\t\t\twrap.dataset.durationMs  = String(e.durationMs || 0);\n\t\t\t\twrap.dataset.success     = ok ? '1' : '0';\n\t\t\t\twrap.dataset.error       = e.error || '';\n\n\t\t\t\tconst summary = document.createElement('summary');\n\t\t\t\tsummary.className = 'log-summary';\n\n\t\t\t\tconst badge = document.createElement('span');\n\t\t\t\tbadge.className = 'state-badge ' + (ok ? 'state-connected' : 'state-error');\n\t\t\t\tbadge.textContent = ok ? 'ok' : 'err';\n\t\t\t\tsummary.appendChild(badge);\n\n\t\t\t\tconst code = document.createElement('code');\n\t\t\t\tcode.textContent = e.toolName || '';\n\t\t\t\tsummary.appendChild(code);\n\n\t\t\t\tconst dur = document.createElement('span');\n\t\t\t\tdur.className = durationTierClassJS(+e.durationMs || 0);\n\t\t\t\tdur.textContent = (e.durationMs || 0) + 'ms';\n\t\t\t\tsummary.appendChild(dur);\n\n\t\t\t\tconst ts = document.createElement('span');\n\t\t\t\tts.className = 'dim';\n\t\t\t\tts.style.marginLeft = 'auto';\n\t\t\t\ttry { ts.textContent = new Date(e.calledAt).toLocaleTimeString(); }\n\t\t\t\tcatch (_) { ts.textContent = ''; }\n\t\t\t\tsummary.appendChild(ts);\n\n\t\t\t\tif (e.error) {\n\t\t\t\t\tconst err = document.createElement('span');\n\t\t\t\t\terr.style.color = '#eb5757';\n\t\t\t\t\terr.textContent = e.error;\n\t\t\t\t\tsummary.appendChild(err);\n\t\t\t\t}\n\n\t\t\t\twrap.appendChild(summary);\n\n\t\t\t\tconst payload = document.createElement('div');\n\t\t\t\tpayload.className = 'log-payload';\n\t\t\t\twrap.appendChild(payload);\n\t\t\t\treturn wrap;\n\t\t\t}\n\n\t\t\tfunction safeParse(s) {\n\t\t\t\ttry { return s ? JSON.parse(s) : null; }\n\t\t\t\tcatch (_) { return null; }\n\t\t\t}\n\n\t\t\tfunction unwrapEnvelope(val) {\n\t\t\t\tif (!val || typeof val !== 'object') return { envelope: null, payload: val };\n\t\t\t\tif (!Array.isArray(val.content) || val.content.length === 0)\n\t\t\t\t\treturn { envelope: null, payload: val };\n\t\t\t\tfor (const part of val.content) {\n\t\t\t\t\tif (part && part.type === 'text' && typeof part.text === 'string') {\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tconst parsed = JSON.parse(part.text);\n\t\t\t\t\t\t\treturn { envelope: val, payload: parsed };\n\t\t\t\t\t\t} catch (_) { /* fall through */ }\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\treturn { envelope: null, payload: val };\n\t\t\t}\n\n\t\t\tfunction upgradePending(row) {\n\t\t\t\tif (row.dataset.jsonPending !== '1') return;\n\t\t\t\tconst reqVal  = safeParse(row.dataset.request);\n\t\t\t\tconst respRaw = safeParse(row.dataset.response);\n\t\t\t\tconst { envelope, payload } = unwrapEnvelope(respRaw);\n\n\t\t\t\tconst old = row.querySelector('.log-payload');\n\t\t\t\tif (!old) { row.dataset.jsonPending = ''; return; }\n\n\t\t\t\tconst body = buildTabbed({\n\t\t\t\t\treq:      reqVal,\n\t\t\t\t\tpayload:  payload,\n\t\t\t\t\tenvelope: envelope,\n\t\t\t\t\tcalledAt: row.dataset.calledAt || '',\n\t\t\t\t\tms:       +row.dataset.durationMs || 0,\n\t\t\t\t\tok:       row.dataset.success === '1',\n\t\t\t\t\terrStr:   row.dataset.error || '',\n\t\t\t\t\trawReq:   row.dataset.request || '',\n\t\t\t\t\trawResp:  row.dataset.response || '',\n\t\t\t\t});\n\t\t\t\told.innerHTML = '';\n\t\t\t\told.appendChild(body);\n\t\t\t\trow.dataset.jsonPending = '';\n\t\t\t}\n\n\t\t\tfunction buildTabbed(ctx) {\n\t\t\t\tconst frag = document.createDocumentFragment();\n\n\t\t\t\tconst tabs = document.createElement('div');\n\t\t\t\ttabs.className = 'log-tabs';\n\t\t\t\ttabs.setAttribute('role', 'tablist');\n\n\t\t\t\tconst panels = {};\n\t\t\t\tconst tabKeys = ['request', 'response', 'meta', 'raw'];\n\t\t\t\tconst tabLabels = { request: 'Request', response: 'Response', meta: 'Meta', raw: 'Raw' };\n\n\t\t\t\ttabKeys.forEach(function (k, i) {\n\t\t\t\t\tconst btn = document.createElement('button');\n\t\t\t\t\tbtn.type = 'button';\n\t\t\t\t\tbtn.className = 'log-tab';\n\t\t\t\t\tbtn.setAttribute('role', 'tab');\n\t\t\t\t\tbtn.setAttribute('aria-selected', i === 0 ? 'true' : 'false');\n\t\t\t\t\tbtn.dataset.tab = k;\n\t\t\t\t\tbtn.textContent = tabLabels[k];\n\t\t\t\t\tbtn.addEventListener('click', function () { selectTab(k); });\n\t\t\t\t\ttabs.appendChild(btn);\n\t\t\t\t});\n\n\t\t\t\tfunction selectTab(name) {\n\t\t\t\t\ttabs.querySelectorAll('.log-tab').forEach(function (b) {\n\t\t\t\t\t\tb.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');\n\t\t\t\t\t});\n\t\t\t\t\tObject.keys(panels).forEach(function (k) {\n\t\t\t\t\t\tif (k === name) panels[k].removeAttribute('hidden');\n\t\t\t\t\t\telse panels[k].setAttribute('hidden', '');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfrag.appendChild(tabs);\n\n\t\t\t\t// Request panel\n\t\t\t\tpanels.request = mkPanel('request', false);\n\t\t\t\tconst reqTree = document.createElement('div');\n\t\t\t\treqTree.className = 'json-tree';\n\t\t\t\tpanels.request.appendChild(reqTree);\n\t\t\t\tjsonTree(reqTree, ctx.req, { collapsedAtDepth: 2 });\n\t\t\t\tfrag.appendChild(panels.request);\n\n\t\t\t\t// Response panel\n\t\t\t\tpanels.response = mkPanel('response', true);\n\t\t\t\tconst respTree = document.createElement('div');\n\t\t\t\trespTree.className = 'json-tree';\n\t\t\t\tpanels.response.appendChild(respTree);\n\t\t\t\tjsonTree(respTree, ctx.payload, { collapsedAtDepth: 2 });\n\t\t\t\tif (ctx.envelope) {\n\t\t\t\t\tconst env = document.createElement('details');\n\t\t\t\t\tenv.className = 'envelope-toggle';\n\t\t\t\t\tconst sum = document.createElement('summary');\n\t\t\t\t\tsum.textContent = 'envelope';\n\t\t\t\t\tenv.appendChild(sum);\n\t\t\t\t\tconst envTree = document.createElement('div');\n\t\t\t\t\tenvTree.className = 'json-tree';\n\t\t\t\t\tenv.appendChild(envTree);\n\t\t\t\t\tjsonTree(envTree, ctx.envelope, { collapsedAtDepth: 1 });\n\t\t\t\t\tpanels.response.appendChild(env);\n\t\t\t\t}\n\t\t\t\tfrag.appendChild(panels.response);\n\n\t\t\t\t// Meta panel\n\t\t\t\tpanels.meta = mkPanel('meta', true);\n\t\t\t\tconst meta = document.createElement('div');\n\t\t\t\tmeta.className = 'log-meta';\n\t\t\t\tmeta.appendChild(metaRow('called at', formatCalledAt(ctx.calledAt)));\n\t\t\t\tconst durLine = document.createElement('span');\n\t\t\t\tdurLine.className = durationTierClassJS(ctx.ms);\n\t\t\t\tdurLine.textContent = ctx.ms + 'ms';\n\t\t\t\tmeta.appendChild(metaRow('duration', durLine));\n\t\t\t\tmeta.appendChild(metaRow('success', ctx.ok ? 'true' : 'false'));\n\t\t\t\tif (ctx.errStr) {\n\t\t\t\t\tconst errEl = document.createElement('code');\n\t\t\t\t\terrEl.style.color = '#eb5757';\n\t\t\t\t\terrEl.textContent = ctx.errStr;\n\t\t\t\t\tmeta.appendChild(metaRow('error', errEl));\n\t\t\t\t}\n\t\t\t\tpanels.meta.appendChild(meta);\n\t\t\t\tfrag.appendChild(panels.meta);\n\n\t\t\t\t// Raw panel\n\t\t\t\tpanels.raw = mkPanel('raw', true);\n\t\t\t\tconst rawReqLabel = document.createElement('strong');\n\t\t\t\trawReqLabel.textContent = 'Request';\n\t\t\t\tpanels.raw.appendChild(rawReqLabel);\n\t\t\t\tconst rawReqPre = document.createElement('pre');\n\t\t\t\trawReqPre.textContent = ctx.rawReq || '—';\n\t\t\t\tpanels.raw.appendChild(rawReqPre);\n\t\t\t\tconst rawRespLabel = document.createElement('strong');\n\t\t\t\trawRespLabel.textContent = 'Response';\n\t\t\t\tpanels.raw.appendChild(rawRespLabel);\n\t\t\t\tconst rawRespPre = document.createElement('pre');\n\t\t\t\trawRespPre.textContent = ctx.rawResp || '—';\n\t\t\t\tpanels.raw.appendChild(rawRespPre);\n\t\t\t\tfrag.appendChild(panels.raw);\n\n\t\t\t\treturn frag;\n\t\t\t}\n\n\t\t\tfunction mkPanel(name, hidden) {\n\t\t\t\tconst p = document.createElement('div');\n\t\t\t\tp.className = 'log-tab-panel';\n\t\t\t\tp.setAttribute('role', 'tabpanel');\n\t\t\t\tp.dataset.tabPanel = name;\n\t\t\t\tif (hidden) p.setAttribute('hidden', '');\n\t\t\t\treturn p;\n\t\t\t}\n\n\t\t\tfunction metaRow(label, value) {\n\t\t\t\tconst row = document.createElement('div');\n\t\t\t\tconst l = document.createElement('span');\n\t\t\t\tl.className = 'meta-label';\n\t\t\t\tl.textContent = label;\n\t\t\t\trow.appendChild(l);\n\t\t\t\tif (value instanceof Node) row.appendChild(value);\n\t\t\t\telse { const v = document.createElement('span'); v.textContent = value; row.appendChild(v); }\n\t\t\t\treturn row;\n\t\t\t}\n\n\t\t\tfunction formatCalledAt(iso) {\n\t\t\t\tif (!iso) return '';\n\t\t\t\ttry {\n\t\t\t\t\tconst d = new Date(iso);\n\t\t\t\t\treturn dtFmt.format(d) + ' (' + d.toISOString() + ')';\n\t\t\t\t} catch (_) {\n\t\t\t\t\treturn iso;\n\t\t\t\t}\n\t\t\t}\n\n\t\t\t// ── jsonTree (vanilla, no deps) ─────────────────────────────\n\n\t\t\tfunction jsonTree(container, value, opts) {\n\t\t\t\tconst collapsedAtDepth = (opts && typeof opts.collapsedAtDepth === 'number') ? opts.collapsedAtDepth : 2;\n\t\t\t\tcontainer.appendChild(renderNode(value, [], 0, collapsedAtDepth));\n\t\t\t}\n\n\t\t\tfunction renderNode(value, path, depth, collapseAt) {\n\t\t\t\tif (value === null) return leafSpan('null', 'json-null', value);\n\t\t\t\tconst t = Array.isArray(value) ? 'array' : typeof value;\n\t\t\t\tif (t === 'string')  return renderString(value);\n\t\t\t\tif (t === 'number')  return leafSpan(String(value), 'json-number', value);\n\t\t\t\tif (t === 'boolean') return leafSpan(String(value), 'json-bool',   value);\n\t\t\t\tif (t === 'array')   return renderArray(value, path, depth, collapseAt);\n\t\t\t\tif (t === 'object')  return renderObject(value, path, depth, collapseAt);\n\t\t\t\treturn leafSpan(String(value), 'json-null', value);\n\t\t\t}\n\n\t\t\tfunction leafSpan(text, cls, raw) {\n\t\t\t\tconst s = document.createElement('span');\n\t\t\t\ts.className = cls + ' json-leaf';\n\t\t\t\ts.textContent = text;\n\t\t\t\ts.title = 'click to copy';\n\t\t\t\ts.addEventListener('click', function (ev) {\n\t\t\t\t\tev.stopPropagation();\n\t\t\t\t\tcopyText(String(raw));\n\t\t\t\t});\n\t\t\t\treturn s;\n\t\t\t}\n\n\t\t\tfunction renderString(value) {\n\t\t\t\tconst TRUNC = 200;\n\t\t\t\tif (value.length > TRUNC) {\n\t\t\t\t\tconst wrap = document.createElement('span');\n\t\t\t\t\twrap.className = 'json-string';\n\t\t\t\t\tconst display = document.createElement('span');\n\t\t\t\t\tdisplay.className = 'json-leaf';\n\t\t\t\t\tdisplay.textContent = '\"' + value.slice(0, TRUNC) + '…\"';\n\t\t\t\t\tdisplay.title = 'click to copy (truncated)';\n\t\t\t\t\tdisplay.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(value); });\n\t\t\t\t\twrap.appendChild(display);\n\t\t\t\t\tconst btn = document.createElement('button');\n\t\t\t\t\tbtn.type = 'button';\n\t\t\t\t\tbtn.className = 'json-copy-full';\n\t\t\t\t\tbtn.textContent = 'Copy full';\n\t\t\t\t\tbtn.title = 'copy full string';\n\t\t\t\t\tbtn.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(value); });\n\t\t\t\t\twrap.appendChild(btn);\n\t\t\t\t\treturn wrap;\n\t\t\t\t}\n\t\t\t\tconst wrap = document.createElement('span');\n\t\t\t\twrap.className = 'json-string json-leaf';\n\t\t\t\twrap.textContent = '\"' + value + '\"';\n\t\t\t\twrap.title = 'click to copy';\n\t\t\t\twrap.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(value); });\n\t\t\t\treturn wrap;\n\t\t\t}\n\n\t\t\tfunction renderObject(obj, path, depth, collapseAt) {\n\t\t\t\tconst keys = Object.keys(obj);\n\t\t\t\tconst wrap = document.createElement('span');\n\n\t\t\t\tconst det = document.createElement('details');\n\t\t\t\tif (depth < collapseAt) det.open = true;\n\t\t\t\tconst sum = document.createElement('summary');\n\t\t\t\tsum.className = 'json-summary';\n\t\t\t\tsum.textContent = '{ ' + keys.length + (keys.length === 1 ? ' field' : ' fields') + ' }';\n\t\t\t\tdet.appendChild(sum);\n\n\t\t\t\tconst children = document.createElement('div');\n\t\t\t\tchildren.className = 'json-children';\n\t\t\t\tkeys.forEach(function (k) {\n\t\t\t\t\tchildren.appendChild(buildKeyedRow(k, obj[k], path.concat([k]), depth + 1, collapseAt));\n\t\t\t\t});\n\t\t\t\tdet.appendChild(children);\n\t\t\t\twrap.appendChild(det);\n\t\t\t\treturn wrap;\n\t\t\t}\n\n\t\t\tfunction renderArray(arr, path, depth, collapseAt) {\n\t\t\t\tconst wrap = document.createElement('span');\n\t\t\t\tconst det = document.createElement('details');\n\t\t\t\tif (depth < collapseAt) det.open = true;\n\t\t\t\tconst sum = document.createElement('summary');\n\t\t\t\tsum.className = 'json-summary';\n\t\t\t\tsum.textContent = '[ ' + arr.length + (arr.length === 1 ? ' item' : ' items') + ' ]';\n\t\t\t\tdet.appendChild(sum);\n\n\t\t\t\tconst children = document.createElement('div');\n\t\t\t\tchildren.className = 'json-children';\n\t\t\t\tarr.forEach(function (item, i) {\n\t\t\t\t\tchildren.appendChild(buildIndexRow(i, item, path.concat([i]), depth + 1, collapseAt));\n\t\t\t\t});\n\t\t\t\tdet.appendChild(children);\n\t\t\t\twrap.appendChild(det);\n\t\t\t\treturn wrap;\n\t\t\t}\n\n\t\t\tfunction buildKeyedRow(key, value, path, depth, collapseAt) {\n\t\t\t\tconst row = document.createElement('div');\n\t\t\t\trow.className = 'json-row';\n\n\t\t\t\tconst keyEl = document.createElement('span');\n\t\t\t\tkeyEl.className = 'json-key';\n\t\t\t\tkeyEl.textContent = key;\n\t\t\t\trow.appendChild(keyEl);\n\n\t\t\t\trow.appendChild(renderNode(value, path, depth, collapseAt));\n\n\t\t\t\tconst copyPath = document.createElement('button');\n\t\t\t\tcopyPath.type = 'button';\n\t\t\t\tcopyPath.className = 'json-copy-path';\n\t\t\t\tcopyPath.textContent = '⧉';\n\t\t\t\tcopyPath.title = 'copy path: ' + pathToString(path);\n\t\t\t\tcopyPath.addEventListener('click', function (ev) {\n\t\t\t\t\tev.stopPropagation();\n\t\t\t\t\tcopyText(pathToString(path));\n\t\t\t\t});\n\t\t\t\trow.appendChild(copyPath);\n\t\t\t\treturn row;\n\t\t\t}\n\n\t\t\tfunction buildIndexRow(idx, value, path, depth, collapseAt) {\n\t\t\t\tconst row = document.createElement('div');\n\t\t\t\trow.className = 'json-row';\n\n\t\t\t\tconst keyEl = document.createElement('span');\n\t\t\t\tkeyEl.className = 'json-key';\n\t\t\t\tkeyEl.textContent = '[' + idx + ']';\n\t\t\t\trow.appendChild(keyEl);\n\n\t\t\t\trow.appendChild(renderNode(value, path, depth, collapseAt));\n\n\t\t\t\tconst copyPath = document.createElement('button');\n\t\t\t\tcopyPath.type = 'button';\n\t\t\t\tcopyPath.className = 'json-copy-path';\n\t\t\t\tcopyPath.textContent = '⧉';\n\t\t\t\tcopyPath.title = 'copy path: ' + pathToString(path);\n\t\t\t\tcopyPath.addEventListener('click', function (ev) {\n\t\t\t\t\tev.stopPropagation();\n\t\t\t\t\tcopyText(pathToString(path));\n\t\t\t\t});\n\t\t\t\trow.appendChild(copyPath);\n\t\t\t\treturn row;\n\t\t\t}\n\n\t\t\tfunction pathToString(path) {\n\t\t\t\tlet s = '';\n\t\t\t\tpath.forEach(function (seg) {\n\t\t\t\t\tif (typeof seg === 'number') s += '[' + seg + ']';\n\t\t\t\t\telse s += (s === '' ? '' : '.') + seg;\n\t\t\t\t});\n\t\t\t\treturn s;\n\t\t\t}\n\n\t\t\tfunction copyText(text) {\n\t\t\t\ttry {\n\t\t\t\t\tif (navigator.clipboard && navigator.clipboard.writeText) {\n\t\t\t\t\t\tnavigator.clipboard.writeText(text);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t} catch (_) { /* fallthrough */ }\n\t\t\t\tconst ta = document.createElement('textarea');\n\t\t\t\tta.value = text;\n\t\t\t\tta.style.position = 'fixed';\n\t\t\t\tta.style.opacity = '0';\n\t\t\t\tdocument.body.appendChild(ta);\n\t\t\t\tta.select();\n\t\t\t\ttry { document.execCommand('copy'); } catch (_) {}\n\t\t\t\tdocument.body.removeChild(ta);\n\t\t\t}\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</div><div id=\"log-aria-live\" class=\"visually-hidden\" aria-live=\"polite\" aria-atomic=\"true\"></div></div></article></dialog><script>\n\t\t(function () {\n\t\t\tconst dialog    = document.getElementById('log-dialog');\n\t\t\tconst callLog   = document.getElementById('call-log');\n\t\t\tconst virtualEl = document.getElementById('log-virtual');\n\t\t\tconst stickyEl  = document.getElementById('log-sticky');\n\t\t\tconst sparkline = document.getElementById('log-sparkline');\n\t\t\tconst filterBar = document.getElementById('log-filter-bar');\n\t\t\tconst searchInput = document.getElementById('log-search');\n\t\t\tconst toolInput   = document.getElementById('log-tool-input');\n\t\t\tconst toolChips   = document.getElementById('log-tool-chips');\n\t\t\tconst toolList    = document.getElementById('log-tool-list');\n\t\t\tconst pauseBtn    = document.getElementById('log-pause-btn');\n\t\t\tconst openBtn     = document.getElementById('log-open-btn');\n\t\t\tconst ariaLive    = document.getElementById('log-aria-live');\n\t\t\tconst backendName = callLog.dataset.backendName || '';\n\t\t\tconst lsKey       = 'agentsmith:filter:' + backendName;\n\t\t\tconst dtFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });\n\n\t\t\t// ── state ────────────────────────────────────\n\t\t\tconst entries = [];      // newest-first\n\t\t\tconst buffered = [];     // received while paused, newest-first\n\t\t\tconst filter = {\n\t\t\t\tstatus: 'all',         // 'all' | 'ok' | 'err'\n\t\t\t\ttools: new Set(),\n\t\t\t\tdurationMin: 0,\n\t\t\t\tsearch: '',\n\t\t\t\tbucketRange: null,     // [t0ms, t1ms] or null\n\t\t\t};\n\t\t\tlet paused      = false;\n\t\t\tlet initialized = false;\n\t\t\tlet esStarted   = false;\n\t\t\tlet viewItems   = [];    // [{type:'row',index} | {type:'group',indices,key}]\n\t\t\tconst rendered  = new Map(); // viewIdx -> {el}\n\t\t\tconst expandedGroups = new Set();\n\t\t\tlet rowHeight   = 32;\n\t\t\tlet topSpacer   = null;\n\t\t\tlet bottomSpacer = null;\n\t\t\tlet sparkTimer  = 0;\n\t\t\tlet scrollRaf   = 0;\n\t\t\tlet searchTimer = 0;\n\t\t\tlet lastFocused = null;\n\n\t\t\t// ── lifecycle ────────────────────────────────\n\t\t\tdialog.addEventListener('toggle', function () {\n\t\t\t\tif (dialog.open) onOpen();\n\t\t\t\telse onClose();\n\t\t\t});\n\t\t\tdialog.addEventListener('click', function (ev) {\n\t\t\t\tif (ev.target === dialog) dialog.close();\n\t\t\t});\n\t\t\tdialog.addEventListener('close', onClose);\n\n\t\t\tfunction onOpen() {\n\t\t\t\tlastFocused = document.activeElement === openBtn ? openBtn : (lastFocused || openBtn);\n\t\t\t\tif (!initialized) initOnce();\n\t\t\t\tif (!esStarted) { esStarted = true; startSSE(); }\n\t\t\t\t// pause is per-session (per plan): reset on each open and flush any buffer.\n\t\t\t\tif (paused) { paused = false; }\n\t\t\t\tif (buffered.length > 0) flushBuffer();\n\t\t\t\tupdatePauseLabel();\n\t\t\t\tdocument.addEventListener('keydown', onKeydownTrap);\n\t\t\t\t// focus first focusable inside dialog (defer past the toggle event)\n\t\t\t\tsetTimeout(function () {\n\t\t\t\t\tconst f = focusables();\n\t\t\t\t\tif (f.length > 0) f[0].focus();\n\t\t\t\t}, 0);\n\t\t\t}\n\n\t\t\tfunction onClose() {\n\t\t\t\tdocument.removeEventListener('keydown', onKeydownTrap);\n\t\t\t\tif (lastFocused && typeof lastFocused.focus === 'function') {\n\t\t\t\t\ttry { lastFocused.focus(); } catch (_) {}\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction initOnce() {\n\t\t\t\tinitialized = true;\n\t\t\t\t// 1. Pull data out of any server-rendered seed rows.\n\t\t\t\tconst seedRows = virtualEl.querySelectorAll('.log-row');\n\t\t\t\tseedRows.forEach(function (row) { entries.push(entryFromRow(row)); });\n\t\t\t\t// 2. Replace #log-virtual content with virtualization scaffold.\n\t\t\t\tvirtualEl.innerHTML = '';\n\t\t\t\ttopSpacer = document.createElement('div');\n\t\t\t\ttopSpacer.className = 'log-spacer log-spacer-top';\n\t\t\t\tbottomSpacer = document.createElement('div');\n\t\t\t\tbottomSpacer.className = 'log-spacer log-spacer-bottom';\n\t\t\t\tvirtualEl.appendChild(topSpacer);\n\t\t\t\tvirtualEl.appendChild(bottomSpacer);\n\t\t\t\t// 3. Load persisted filter state, then sync UI.\n\t\t\t\tloadFilter();\n\t\t\t\tsyncFilterBarUI();\n\t\t\t\trebuildToolDatalist();\n\t\t\t\trenderToolChips();\n\t\t\t\twireFilterBar();\n\t\t\t\t// 4. First render.\n\t\t\t\tcompute();\n\t\t\t\trenderSparklineNow();\n\t\t\t\tcallLog.addEventListener('scroll', onScroll, { passive: true });\n\t\t\t\twindow.addEventListener('resize', scheduleSparkline);\n\t\t\t}\n\n\t\t\t// ── entry adapters ──────────────────────────\n\t\t\tfunction entryFromRow(row) {\n\t\t\t\tconst ds = row.dataset || {};\n\t\t\t\treturn {\n\t\t\t\t\ttoolName:   ds.toolName  || '',\n\t\t\t\t\trequest:    ds.request   || '',\n\t\t\t\t\tresponse:   ds.response  || '',\n\t\t\t\t\terror:      ds.error     || '',\n\t\t\t\t\tsuccess:    ds.success === '1',\n\t\t\t\t\tdurationMs: +ds.durationMs || 0,\n\t\t\t\t\tcalledAt:   ds.calledAt  || '',\n\t\t\t\t\tcalledAtMs: Date.parse(ds.calledAt || '') || 0,\n\t\t\t\t};\n\t\t\t}\n\t\t\tfunction entryFromEvent(e) {\n\t\t\t\treturn {\n\t\t\t\t\ttoolName:   e.toolName   || '',\n\t\t\t\t\trequest:    e.request    || '',\n\t\t\t\t\tresponse:   e.response   || '',\n\t\t\t\t\terror:      e.error      || '',\n\t\t\t\t\tsuccess:    !!e.success,\n\t\t\t\t\tdurationMs: +e.durationMs || 0,\n\t\t\t\t\tcalledAt:   e.calledAt   || '',\n\t\t\t\t\tcalledAtMs: Date.parse(e.calledAt || '') || 0,\n\t\t\t\t};\n\t\t\t}\n\n\t\t\t// ── SSE ─────────────────────────────────────\n\t\t\tfunction startSSE() {\n\t\t\t\tconst es = new EventSource(callLog.dataset.streamUrl);\n\t\t\t\tes.addEventListener('log', function (ev) {\n\t\t\t\t\tconst entry = entryFromEvent(JSON.parse(ev.data));\n\t\t\t\t\tif (paused) {\n\t\t\t\t\t\tbuffered.unshift(entry);\n\t\t\t\t\t\tupdatePauseLabel();\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tacceptNewEntries([entry]);\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction acceptNewEntries(newOnes) {\n\t\t\t\tif (!newOnes || newOnes.length === 0) return;\n\t\t\t\t// keep scroll position stable when prepending while scrolled.\n\t\t\t\tconst wasScrolled = callLog.scrollTop > 0;\n\t\t\t\tfor (let i = 0; i < newOnes.length; i++) entries.unshift(newOnes[i]);\n\t\t\t\twhile (entries.length > 500) entries.pop();\n\t\t\t\trebuildToolDatalist();\n\t\t\t\tif (wasScrolled) callLog.scrollTop += newOnes.length * rowHeight;\n\t\t\t\tcompute();\n\t\t\t\tscheduleSparkline();\n\t\t\t\tannounce(newOnes.length === 1 ? '1 new call' : (newOnes.length + ' new calls'));\n\t\t\t}\n\n\t\t\tfunction flushBuffer() {\n\t\t\t\tif (buffered.length === 0) return;\n\t\t\t\tconst newOnes = buffered.slice(); // newest-first already\n\t\t\t\tbuffered.length = 0;\n\t\t\t\tacceptNewEntries(newOnes);\n\t\t\t}\n\n\t\t\t// ── filter persistence ──────────────────────\n\t\t\tfunction loadFilter() {\n\t\t\t\ttry {\n\t\t\t\t\tconst raw = localStorage.getItem(lsKey);\n\t\t\t\t\tif (!raw) return;\n\t\t\t\t\tconst saved = JSON.parse(raw);\n\t\t\t\t\tif (saved.status === 'all' || saved.status === 'ok' || saved.status === 'err') filter.status = saved.status;\n\t\t\t\t\tif (Array.isArray(saved.tools)) filter.tools = new Set(saved.tools);\n\t\t\t\t\tif (typeof saved.durationMin === 'number') filter.durationMin = saved.durationMin;\n\t\t\t\t\tif (typeof saved.search === 'string') {\n\t\t\t\t\t\tfilter.search = saved.search.toLowerCase();\n\t\t\t\t\t\tsearchInput.value = saved.search;\n\t\t\t\t\t}\n\t\t\t\t} catch (_) { /* tolerate stale entries */ }\n\t\t\t}\n\t\t\tfunction saveFilter() {\n\t\t\t\ttry {\n\t\t\t\t\tlocalStorage.setItem(lsKey, JSON.stringify({\n\t\t\t\t\t\tstatus:      filter.status,\n\t\t\t\t\t\ttools:       Array.from(filter.tools),\n\t\t\t\t\t\tdurationMin: filter.durationMin,\n\t\t\t\t\t\tsearch:      searchInput.value || '',\n\t\t\t\t\t}));\n\t\t\t\t} catch (_) {}\n\t\t\t}\n\n\t\t\t// ── filter bar UI ───────────────────────────\n\t\t\tfunction syncFilterBarUI() {\n\t\t\t\tfilterBar.querySelectorAll('[data-status]').forEach(function (b) {\n\t\t\t\t\tb.setAttribute('aria-pressed', b.dataset.status === filter.status ? 'true' : 'false');\n\t\t\t\t});\n\t\t\t\tfilterBar.querySelectorAll('[data-duration]').forEach(function (b) {\n\t\t\t\t\tb.setAttribute('aria-pressed', +b.dataset.duration === filter.durationMin ? 'true' : 'false');\n\t\t\t\t});\n\t\t\t\trenderToolChips();\n\t\t\t}\n\t\t\tfunction wireFilterBar() {\n\t\t\t\tfilterBar.querySelectorAll('[data-status]').forEach(function (b) {\n\t\t\t\t\tb.addEventListener('click', function () {\n\t\t\t\t\t\tfilter.status = b.dataset.status;\n\t\t\t\t\t\tsyncFilterBarUI();\n\t\t\t\t\t\tcompute();\n\t\t\t\t\t\tsaveFilter();\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t\tfilterBar.querySelectorAll('[data-duration]').forEach(function (b) {\n\t\t\t\t\tb.addEventListener('click', function () {\n\t\t\t\t\t\tfilter.durationMin = +b.dataset.duration;\n\t\t\t\t\t\tsyncFilterBarUI();\n\t\t\t\t\t\tcompute();\n\t\t\t\t\t\tsaveFilter();\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t\tsearchInput.addEventListener('input', function () {\n\t\t\t\t\tclearTimeout(searchTimer);\n\t\t\t\t\tsearchTimer = setTimeout(function () {\n\t\t\t\t\t\tfilter.search = (searchInput.value || '').toLowerCase();\n\t\t\t\t\t\tcompute();\n\t\t\t\t\t\tsaveFilter();\n\t\t\t\t\t}, 150);\n\t\t\t\t});\n\t\t\t\ttoolInput.addEventListener('keydown', function (ev) {\n\t\t\t\t\tif (ev.key === 'Enter' || ev.key === ',') {\n\t\t\t\t\t\tev.preventDefault();\n\t\t\t\t\t\taddToolFilter(toolInput.value);\n\t\t\t\t\t} else if (ev.key === 'Backspace' && toolInput.value === '' && filter.tools.size > 0) {\n\t\t\t\t\t\tconst arr = Array.from(filter.tools);\n\t\t\t\t\t\tfilter.tools.delete(arr[arr.length - 1]);\n\t\t\t\t\t\trenderToolChips(); compute(); saveFilter();\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\ttoolInput.addEventListener('change', function () {\n\t\t\t\t\tif (toolInput.value) addToolFilter(toolInput.value);\n\t\t\t\t});\n\t\t\t\tpauseBtn.addEventListener('click', function () {\n\t\t\t\t\tpaused = !paused;\n\t\t\t\t\tif (!paused) flushBuffer();\n\t\t\t\t\tupdatePauseLabel();\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction addToolFilter(raw) {\n\t\t\t\tconst v = (raw || '').replace(/,$/, '').trim();\n\t\t\t\tif (!v) return;\n\t\t\t\tfilter.tools.add(v);\n\t\t\t\ttoolInput.value = '';\n\t\t\t\trenderToolChips(); compute(); saveFilter();\n\t\t\t}\n\t\t\tfunction renderToolChips() {\n\t\t\t\ttoolChips.innerHTML = '';\n\t\t\t\tconst arr = Array.from(filter.tools).sort();\n\t\t\t\tarr.forEach(function (t) {\n\t\t\t\t\tconst chip = document.createElement('span');\n\t\t\t\t\tchip.className = 'chip chip-removable';\n\t\t\t\t\tchip.setAttribute('role', 'listitem');\n\t\t\t\t\tconst label = document.createElement('span');\n\t\t\t\t\tlabel.textContent = t;\n\t\t\t\t\tchip.appendChild(label);\n\t\t\t\t\tconst x = document.createElement('button');\n\t\t\t\t\tx.type = 'button';\n\t\t\t\t\tx.className = 'chip-remove';\n\t\t\t\t\tx.textContent = '×';\n\t\t\t\t\tx.setAttribute('aria-label', 'Remove ' + t);\n\t\t\t\t\tx.addEventListener('click', function () {\n\t\t\t\t\t\tfilter.tools.delete(t);\n\t\t\t\t\t\trenderToolChips(); compute(); saveFilter();\n\t\t\t\t\t});\n\t\t\t\t\tchip.appendChild(x);\n\t\t\t\t\ttoolChips.appendChild(chip);\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction rebuildToolDatalist() {\n\t\t\t\tconst seen = new Set();\n\t\t\t\tfor (let i = 0; i < entries.length; i++) seen.add(entries[i].toolName);\n\t\t\t\tconst arr = Array.from(seen).sort();\n\t\t\t\ttoolList.innerHTML = '';\n\t\t\t\tfor (let i = 0; i < arr.length; i++) {\n\t\t\t\t\tconst opt = document.createElement('option');\n\t\t\t\t\topt.value = arr[i];\n\t\t\t\t\ttoolList.appendChild(opt);\n\t\t\t\t}\n\t\t\t}\n\t\t\tfunction updatePauseLabel() {\n\t\t\t\tif (paused) {\n\t\t\t\t\tpauseBtn.textContent = buffered.length === 0\n\t\t\t\t\t\t? '▶ Resume'\n\t\t\t\t\t\t: '▶ Resume (' + buffered.length + ')';\n\t\t\t\t\tpauseBtn.setAttribute('aria-pressed', 'true');\n\t\t\t\t} else {\n\t\t\t\t\tpauseBtn.textContent = '⏸ Pause';\n\t\t\t\t\tpauseBtn.setAttribute('aria-pressed', 'false');\n\t\t\t\t}\n\t\t\t}\n\n\t\t\t// ── filter + group → viewItems ──────────────\n\t\t\tfunction matchesFilter(e) {\n\t\t\t\tif (filter.status === 'ok' && !e.success) return false;\n\t\t\t\tif (filter.status === 'err' && e.success) return false;\n\t\t\t\tif (filter.tools.size > 0 && !filter.tools.has(e.toolName)) return false;\n\t\t\t\tif (filter.durationMin > 0 && e.durationMs < filter.durationMin) return false;\n\t\t\t\tif (filter.bucketRange) {\n\t\t\t\t\tif (!e.calledAtMs) return false;\n\t\t\t\t\tif (e.calledAtMs < filter.bucketRange[0] || e.calledAtMs > filter.bucketRange[1]) return false;\n\t\t\t\t}\n\t\t\t\tif (filter.search) {\n\t\t\t\t\tconst hay = (e.toolName + ' ' + e.request + ' ' + e.response + ' ' + e.error).toLowerCase();\n\t\t\t\t\tif (hay.indexOf(filter.search) === -1) return false;\n\t\t\t\t}\n\t\t\t\treturn true;\n\t\t\t}\n\n\t\t\tfunction compute() {\n\t\t\t\tconst filteredIdxs = [];\n\t\t\t\tfor (let i = 0; i < entries.length; i++) {\n\t\t\t\t\tif (matchesFilter(entries[i])) filteredIdxs.push(i);\n\t\t\t\t}\n\t\t\t\tviewItems = [];\n\t\t\t\tlet i = 0;\n\t\t\t\twhile (i < filteredIdxs.length) {\n\t\t\t\t\tconst idx = filteredIdxs[i];\n\t\t\t\t\tconst e = entries[idx];\n\t\t\t\t\tif (!e.success && e.error) {\n\t\t\t\t\t\tlet j = i + 1;\n\t\t\t\t\t\twhile (j < filteredIdxs.length) {\n\t\t\t\t\t\t\tconst e2 = entries[filteredIdxs[j]];\n\t\t\t\t\t\t\tif (!e2.success && e2.toolName === e.toolName && e2.error === e.error) j++;\n\t\t\t\t\t\t\telse break;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (j - i >= 2) {\n\t\t\t\t\t\t\tviewItems.push({\n\t\t\t\t\t\t\t\ttype: 'group',\n\t\t\t\t\t\t\t\tindices: filteredIdxs.slice(i, j),\n\t\t\t\t\t\t\t\tkey: 'g:' + e.toolName + ':' + e.error,\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\ti = j;\n\t\t\t\t\t\t\tcontinue;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tviewItems.push({ type: 'row', index: idx });\n\t\t\t\t\ti++;\n\t\t\t\t}\n\t\t\t\t// Drop all currently mounted rows; their indices are stale after recompute.\n\t\t\t\trendered.forEach(function (r) { r.el.remove(); });\n\t\t\t\trendered.clear();\n\t\t\t\ttoggleEmptyState();\n\t\t\t\trenderVisibleWindow();\n\t\t\t}\n\n\t\t\tfunction toggleEmptyState() {\n\t\t\t\tconst existing = document.getElementById('log-empty');\n\t\t\t\tif (viewItems.length === 0) {\n\t\t\t\t\tif (!existing) {\n\t\t\t\t\t\tconst p = document.createElement('p');\n\t\t\t\t\t\tp.className = 'dim';\n\t\t\t\t\t\tp.id = 'log-empty';\n\t\t\t\t\t\tp.innerHTML = '<em>No matching calls.</em>';\n\t\t\t\t\t\tvirtualEl.insertBefore(p, bottomSpacer);\n\t\t\t\t\t}\n\t\t\t\t} else if (existing) {\n\t\t\t\t\texisting.remove();\n\t\t\t\t}\n\t\t\t}\n\n\t\t\t// ── virtualization ─────────────────────────\n\t\t\tconst OVERSCAN = 5;\n\t\t\tfunction onScroll() {\n\t\t\t\tif (scrollRaf) return;\n\t\t\t\tscrollRaf = requestAnimationFrame(function () {\n\t\t\t\t\tscrollRaf = 0;\n\t\t\t\t\trenderVisibleWindow();\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction virtualListTopInScroll() {\n\t\t\t\t// offset of #log-virtual relative to the scrollable origin of #call-log\n\t\t\t\treturn virtualEl.getBoundingClientRect().top\n\t\t\t\t\t- callLog.getBoundingClientRect().top\n\t\t\t\t\t+ callLog.scrollTop;\n\t\t\t}\n\t\t\tfunction renderVisibleWindow() {\n\t\t\t\tconst listTop = virtualListTopInScroll();\n\t\t\t\tconst scrollTop = callLog.scrollTop;\n\t\t\t\tconst viewportH = callLog.clientHeight;\n\t\t\t\tconst relTop = Math.max(0, scrollTop - listTop);\n\t\t\t\tconst relBot = Math.max(relTop, scrollTop + viewportH - listTop);\n\t\t\t\tlet first = Math.max(0, Math.floor(relTop / rowHeight) - OVERSCAN);\n\t\t\t\tlet last  = Math.min(viewItems.length, Math.ceil(relBot / rowHeight) + OVERSCAN);\n\t\t\t\tif (last < first) last = first;\n\n\t\t\t\t// Unmount rows that fell outside the window.\n\t\t\t\trendered.forEach(function (entry, idx) {\n\t\t\t\t\tif (idx < first || idx >= last) {\n\t\t\t\t\t\tentry.el.remove();\n\t\t\t\t\t\trendered.delete(idx);\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\t// Mount missing rows inside the window.\n\t\t\t\tfor (let idx = first; idx < last; idx++) {\n\t\t\t\t\tif (rendered.has(idx)) continue;\n\t\t\t\t\tconst item = viewItems[idx];\n\t\t\t\t\tif (!item) continue;\n\t\t\t\t\tconst el = buildViewItem(item);\n\t\t\t\t\tel.dataset.viewIdx = String(idx);\n\t\t\t\t\tinsertInOrder(el, idx);\n\t\t\t\t\trendered.set(idx, { el: el });\n\t\t\t\t}\n\t\t\t\t// Measure row height once we have a sample.\n\t\t\t\tif (rowHeight === 32 && rendered.size > 0) {\n\t\t\t\t\tconst sampleEntry = rendered.values().next().value;\n\t\t\t\t\tconst h = sampleEntry.el.getBoundingClientRect().height;\n\t\t\t\t\tif (h > 0) rowHeight = h;\n\t\t\t\t}\n\t\t\t\t// Update spacers.\n\t\t\t\ttopSpacer.style.height = (first * rowHeight) + 'px';\n\t\t\t\tbottomSpacer.style.height = Math.max(0, (viewItems.length - last) * rowHeight) + 'px';\n\t\t\t}\n\t\t\tfunction insertInOrder(el, idx) {\n\t\t\t\t// Insert el before the next-greater-idx mounted row (or before the bottom spacer).\n\t\t\t\tlet after = topSpacer;\n\t\t\t\tconst children = virtualEl.children;\n\t\t\t\tfor (let i = 0; i < children.length; i++) {\n\t\t\t\t\tconst c = children[i];\n\t\t\t\t\tif (c === topSpacer || c === bottomSpacer) continue;\n\t\t\t\t\tconst cidx = +(c.dataset.viewIdx || -1);\n\t\t\t\t\tif (cidx > idx) { virtualEl.insertBefore(el, c); return; }\n\t\t\t\t\tafter = c;\n\t\t\t\t}\n\t\t\t\tvirtualEl.insertBefore(el, bottomSpacer);\n\t\t\t}\n\n\t\t\t// ── row + group construction ───────────────\n\t\t\tfunction buildViewItem(item) {\n\t\t\t\tif (item.type === 'group') return buildGroupRow(item);\n\t\t\t\treturn buildRowFromEntry(entries[item.index]);\n\t\t\t}\n\n\t\t\tfunction buildRowFromEntry(e) {\n\t\t\t\tconst wrap = document.createElement('details');\n\t\t\t\twrap.className = 'log-row';\n\t\t\t\twrap.style.cssText = e.success\n\t\t\t\t\t? 'border-left:3px solid #1a4731;padding-left:0.5rem;margin-bottom:0.4rem;'\n\t\t\t\t\t: 'border-left:3px solid #4a1010;padding-left:0.5rem;margin-bottom:0.4rem;';\n\t\t\t\twrap.dataset.jsonPending = '1';\n\t\t\t\twrap.dataset.toolName    = e.toolName;\n\t\t\t\twrap.dataset.request     = e.request;\n\t\t\t\twrap.dataset.response    = e.response;\n\t\t\t\twrap.dataset.calledAt    = e.calledAt;\n\t\t\t\twrap.dataset.durationMs  = String(e.durationMs);\n\t\t\t\twrap.dataset.success     = e.success ? '1' : '0';\n\t\t\t\twrap.dataset.error       = e.error;\n\n\t\t\t\tconst summary = document.createElement('summary');\n\t\t\t\tsummary.className = 'log-summary';\n\n\t\t\t\tconst badge = document.createElement('span');\n\t\t\t\tbadge.className = 'state-badge ' + (e.success ? 'state-connected' : 'state-error');\n\t\t\t\tbadge.textContent = e.success ? 'ok' : 'err';\n\t\t\t\tsummary.appendChild(badge);\n\n\t\t\t\tconst code = document.createElement('code');\n\t\t\t\tcode.textContent = e.toolName;\n\t\t\t\tsummary.appendChild(code);\n\n\t\t\t\tconst dur = document.createElement('span');\n\t\t\t\tdur.className = durationTierClassJS(e.durationMs);\n\t\t\t\tdur.textContent = e.durationMs + 'ms';\n\t\t\t\tsummary.appendChild(dur);\n\n\t\t\t\tconst ts = document.createElement('span');\n\t\t\t\tts.className = 'dim';\n\t\t\t\tts.style.marginLeft = 'auto';\n\t\t\t\ttry { ts.textContent = e.calledAt ? new Date(e.calledAt).toLocaleTimeString() : ''; }\n\t\t\t\tcatch (_) { ts.textContent = ''; }\n\t\t\t\tsummary.appendChild(ts);\n\n\t\t\t\tif (e.error) {\n\t\t\t\t\tconst err = document.createElement('span');\n\t\t\t\t\terr.style.color = '#eb5757';\n\t\t\t\t\terr.textContent = e.error;\n\t\t\t\t\tsummary.appendChild(err);\n\t\t\t\t}\n\n\t\t\t\twrap.appendChild(summary);\n\n\t\t\t\tconst payload = document.createElement('div');\n\t\t\t\tpayload.className = 'log-payload';\n\t\t\t\twrap.appendChild(payload);\n\n\t\t\t\t// Lazy-upgrade payload to tabbed JSON tree only when the row is opened.\n\t\t\t\t// Keeps the per-row mount cost light and lets virtualization unmount\n\t\t\t\t// rows cheaply (their heavy DOM is gone when collapsed).\n\t\t\t\twrap.addEventListener('toggle', function () {\n\t\t\t\t\tif (wrap.open && wrap.dataset.jsonPending === '1') upgradePending(wrap);\n\t\t\t\t});\n\t\t\t\treturn wrap;\n\t\t\t}\n\n\t\t\tfunction buildGroupRow(item) {\n\t\t\t\tconst wrap = document.createElement('details');\n\t\t\t\twrap.className = 'log-row log-group';\n\t\t\t\twrap.dataset.groupKey = item.key;\n\t\t\t\twrap.style.cssText = 'border-left:3px solid #4a1010;padding-left:0.5rem;margin-bottom:0.4rem;';\n\t\t\t\tif (expandedGroups.has(item.key)) wrap.open = true;\n\t\t\t\tconst first = entries[item.indices[0]];\n\n\t\t\t\tconst summary = document.createElement('summary');\n\t\t\t\tsummary.className = 'log-summary';\n\t\t\t\tconst badge = document.createElement('span');\n\t\t\t\tbadge.className = 'state-badge state-error';\n\t\t\t\tbadge.textContent = 'err';\n\t\t\t\tsummary.appendChild(badge);\n\t\t\t\tconst code = document.createElement('code');\n\t\t\t\tcode.textContent = first.toolName;\n\t\t\t\tsummary.appendChild(code);\n\t\t\t\tconst chip = document.createElement('span');\n\t\t\t\tchip.className = 'chip chip-group';\n\t\t\t\tchip.textContent = '× ' + item.indices.length;\n\t\t\t\tchip.title = item.indices.length + ' consecutive identical errors';\n\t\t\t\tsummary.appendChild(chip);\n\t\t\t\tconst errText = document.createElement('span');\n\t\t\t\terrText.style.marginLeft = 'auto';\n\t\t\t\terrText.style.color = '#eb5757';\n\t\t\t\terrText.textContent = first.error;\n\t\t\t\tsummary.appendChild(errText);\n\t\t\t\twrap.appendChild(summary);\n\n\t\t\t\tconst body = document.createElement('div');\n\t\t\t\tbody.className = 'log-group-body';\n\t\t\t\titem.indices.forEach(function (idx) {\n\t\t\t\t\tbody.appendChild(buildRowFromEntry(entries[idx]));\n\t\t\t\t});\n\t\t\t\twrap.appendChild(body);\n\n\t\t\t\twrap.addEventListener('toggle', function () {\n\t\t\t\t\tif (wrap.open) expandedGroups.add(item.key);\n\t\t\t\t\telse expandedGroups.delete(item.key);\n\t\t\t\t});\n\t\t\t\treturn wrap;\n\t\t\t}\n\n\t\t\tfunction durationTierClassJS(ms) {\n\t\t\t\tif (ms < 500)  return 'dur-fast';\n\t\t\t\tif (ms < 2000) return 'dur-ok';\n\t\t\t\tif (ms < 5000) return 'dur-slow';\n\t\t\t\treturn 'dur-bad';\n\t\t\t}\n\n\t\t\t// ── sparkline ──────────────────────────────\n\t\t\tfunction scheduleSparkline() {\n\t\t\t\tif (sparkTimer) return;\n\t\t\t\tsparkTimer = setTimeout(function () {\n\t\t\t\t\tsparkTimer = 0;\n\t\t\t\t\trenderSparklineNow();\n\t\t\t\t}, 250);\n\t\t\t}\n\t\t\tfunction renderSparklineNow() {\n\t\t\t\tconst N = 30;\n\t\t\t\twhile (sparkline.firstChild) sparkline.removeChild(sparkline.firstChild);\n\t\t\t\tif (entries.length === 0) return;\n\t\t\t\tlet minT = Infinity, maxT = -Infinity;\n\t\t\t\tfor (let i = 0; i < entries.length; i++) {\n\t\t\t\t\tconst t = entries[i].calledAtMs;\n\t\t\t\t\tif (!t) continue;\n\t\t\t\t\tif (t < minT) minT = t;\n\t\t\t\t\tif (t > maxT) maxT = t;\n\t\t\t\t}\n\t\t\t\tif (!isFinite(minT) || !isFinite(maxT)) return;\n\t\t\t\tif (maxT - minT < 1000) maxT = minT + 1000;\n\t\t\t\tconst span = maxT - minT;\n\t\t\t\tconst buckets = new Array(N);\n\t\t\t\tfor (let i = 0; i < N; i++) {\n\t\t\t\t\tbuckets[i] = {\n\t\t\t\t\t\tok: 0, err: 0,\n\t\t\t\t\t\tt0: minT + (span * i) / N,\n\t\t\t\t\t\tt1: minT + (span * (i + 1)) / N,\n\t\t\t\t\t};\n\t\t\t\t}\n\t\t\t\tfor (let i = 0; i < entries.length; i++) {\n\t\t\t\t\tconst t = entries[i].calledAtMs;\n\t\t\t\t\tif (!t) continue;\n\t\t\t\t\tlet b = Math.floor(((t - minT) / span) * N);\n\t\t\t\t\tif (b < 0) b = 0; if (b >= N) b = N - 1;\n\t\t\t\t\tif (entries[i].success) buckets[b].ok++;\n\t\t\t\t\telse buckets[b].err++;\n\t\t\t\t}\n\t\t\t\tlet maxBucket = 0;\n\t\t\t\tfor (let i = 0; i < N; i++) {\n\t\t\t\t\tconst total = buckets[i].ok + buckets[i].err;\n\t\t\t\t\tif (total > maxBucket) maxBucket = total;\n\t\t\t\t}\n\t\t\t\tif (maxBucket === 0) maxBucket = 1;\n\t\t\t\tconst w = sparkline.clientWidth || 600;\n\t\t\t\tconst h = 40;\n\t\t\t\tsparkline.setAttribute('viewBox', '0 0 ' + w + ' ' + h);\n\t\t\t\tconst barW = w / N;\n\t\t\t\tfor (let i = 0; i < N; i++) {\n\t\t\t\t\tconst b = buckets[i];\n\t\t\t\t\tconst total = b.ok + b.err;\n\t\t\t\t\tconst totalH = (total / maxBucket) * (h - 2);\n\t\t\t\t\tconst errH   = total > 0 ? (b.err / total) * totalH : 0;\n\t\t\t\t\tconst okH    = totalH - errH;\n\t\t\t\t\tconst x = i * barW + 0.5;\n\t\t\t\t\tconst barWidth = Math.max(0, barW - 1);\n\t\t\t\t\tconst isActive = !!(filter.bucketRange && Math.abs(filter.bucketRange[0] - b.t0) < 0.5);\n\n\t\t\t\t\tconst g = document.createElementNS('http://www.w3.org/2000/svg', 'g');\n\t\t\t\t\tg.classList.add('spark-bucket');\n\t\t\t\t\tif (isActive) g.classList.add('active');\n\t\t\t\t\tg.dataset.bucketIdx = String(i);\n\t\t\t\t\tg.style.cursor = 'pointer';\n\n\t\t\t\t\tconst title = document.createElementNS('http://www.w3.org/2000/svg', 'title');\n\t\t\t\t\ttitle.textContent = fmtTimeRange(b.t0, b.t1) + ' · ' + b.ok + ' ok, ' + b.err + ' err';\n\t\t\t\t\tg.appendChild(title);\n\n\t\t\t\t\tif (okH > 0) {\n\t\t\t\t\t\tconst r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');\n\t\t\t\t\t\tr.setAttribute('x', String(x));\n\t\t\t\t\t\tr.setAttribute('y', String(h - okH));\n\t\t\t\t\t\tr.setAttribute('width', String(barWidth));\n\t\t\t\t\t\tr.setAttribute('height', String(okH));\n\t\t\t\t\t\tr.setAttribute('class', 'spark-ok');\n\t\t\t\t\t\tg.appendChild(r);\n\t\t\t\t\t}\n\t\t\t\t\tif (errH > 0) {\n\t\t\t\t\t\tconst r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');\n\t\t\t\t\t\tr.setAttribute('x', String(x));\n\t\t\t\t\t\tr.setAttribute('y', String(h - okH - errH));\n\t\t\t\t\t\tr.setAttribute('width', String(barWidth));\n\t\t\t\t\t\tr.setAttribute('height', String(errH));\n\t\t\t\t\t\tr.setAttribute('class', 'spark-err');\n\t\t\t\t\t\tg.appendChild(r);\n\t\t\t\t\t}\n\t\t\t\t\t// invisible full-height hit target so empty buckets remain clickable\n\t\t\t\t\tconst hit = document.createElementNS('http://www.w3.org/2000/svg', 'rect');\n\t\t\t\t\thit.setAttribute('x', String(x));\n\t\t\t\t\thit.setAttribute('y', '0');\n\t\t\t\t\thit.setAttribute('width', String(barWidth));\n\t\t\t\t\thit.setAttribute('height', String(h));\n\t\t\t\t\thit.setAttribute('fill', 'transparent');\n\t\t\t\t\tg.appendChild(hit);\n\n\t\t\t\t\tg.addEventListener('click', function () {\n\t\t\t\t\t\tif (filter.bucketRange && Math.abs(filter.bucketRange[0] - b.t0) < 0.5) {\n\t\t\t\t\t\t\tfilter.bucketRange = null;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tfilter.bucketRange = [b.t0, b.t1];\n\t\t\t\t\t\t}\n\t\t\t\t\t\tcompute();\n\t\t\t\t\t\trenderSparklineNow();\n\t\t\t\t\t});\n\t\t\t\t\tsparkline.appendChild(g);\n\t\t\t\t}\n\t\t\t}\n\t\t\tfunction fmtTimeRange(t0, t1) {\n\t\t\t\ttry {\n\t\t\t\t\tconst a = new Date(t0).toLocaleTimeString();\n\t\t\t\t\tconst b = new Date(t1).toLocaleTimeString();\n\t\t\t\t\treturn a + '–' + b;\n\t\t\t\t} catch (_) { return ''; }\n\t\t\t}\n\n\t\t\t// ── focus trap ─────────────────────────────\n\t\t\tfunction focusables() {\n\t\t\t\treturn Array.from(dialog.querySelectorAll(\n\t\t\t\t\t'a[href], button:not([disabled]), input:not([disabled]):not([type=\"hidden\"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex=\"-1\"])'\n\t\t\t\t)).filter(function (el) {\n\t\t\t\t\tif (el.hasAttribute('disabled')) return false;\n\t\t\t\t\tconst rect = el.getBoundingClientRect();\n\t\t\t\t\treturn rect.width > 0 && rect.height > 0;\n\t\t\t\t});\n\t\t\t}\n\t\t\tfunction onKeydownTrap(ev) {\n\t\t\t\tif (!dialog.open) return;\n\t\t\t\tif (ev.key !== 'Tab') return;\n\t\t\t\tconst f = focusables();\n\t\t\t\tif (f.length === 0) return;\n\t\t\t\tconst first = f[0], last = f[f.length - 1];\n\t\t\t\tconst active = document.activeElement;\n\t\t\t\tif (ev.shiftKey && (active === first || !dialog.contains(active))) {\n\t\t\t\t\tev.preventDefault(); last.focus();\n\t\t\t\t} else if (!ev.shiftKey && (active === last || !dialog.contains(active))) {\n\t\t\t\t\tev.preventDefault(); first.focus();\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction announce(text) {\n\t\t\t\tariaLive.textContent = '';\n\t\t\t\tsetTimeout(function () { ariaLive.textContent = text; }, 50);\n\t\t\t}\n\n\t\t\t// ── payload upgrade (Stage 3 — preserved) ──\n\t\t\tfunction safeParse(s) {\n\t\t\t\ttry { return s ? JSON.parse(s) : null; }\n\t\t\t\tcatch (_) { return null; }\n\t\t\t}\n\t\t\tfunction unwrapEnvelope(val) {\n\t\t\t\tif (!val || typeof val !== 'object') return { envelope: null, payload: val };\n\t\t\t\tif (!Array.isArray(val.content) || val.content.length === 0)\n\t\t\t\t\treturn { envelope: null, payload: val };\n\t\t\t\tfor (const part of val.content) {\n\t\t\t\t\tif (part && part.type === 'text' && typeof part.text === 'string') {\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tconst parsed = JSON.parse(part.text);\n\t\t\t\t\t\t\treturn { envelope: val, payload: parsed };\n\t\t\t\t\t\t} catch (_) { /* fall through */ }\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\treturn { envelope: null, payload: val };\n\t\t\t}\n\t\t\tfunction upgradePending(row) {\n\t\t\t\tif (row.dataset.jsonPending !== '1') return;\n\t\t\t\tconst reqVal  = safeParse(row.dataset.request);\n\t\t\t\tconst respRaw = safeParse(row.dataset.response);\n\t\t\t\tconst { envelope, payload } = unwrapEnvelope(respRaw);\n\n\t\t\t\tconst old = row.querySelector('.log-payload');\n\t\t\t\tif (!old) { row.dataset.jsonPending = ''; return; }\n\n\t\t\t\tconst body = buildTabbed({\n\t\t\t\t\treq:      reqVal,\n\t\t\t\t\tpayload:  payload,\n\t\t\t\t\tenvelope: envelope,\n\t\t\t\t\tcalledAt: row.dataset.calledAt || '',\n\t\t\t\t\tms:       +row.dataset.durationMs || 0,\n\t\t\t\t\tok:       row.dataset.success === '1',\n\t\t\t\t\terrStr:   row.dataset.error || '',\n\t\t\t\t\trawReq:   row.dataset.request || '',\n\t\t\t\t\trawResp:  row.dataset.response || '',\n\t\t\t\t});\n\t\t\t\told.innerHTML = '';\n\t\t\t\told.appendChild(body);\n\t\t\t\trow.dataset.jsonPending = '';\n\t\t\t}\n\n\t\t\tfunction buildTabbed(ctx) {\n\t\t\t\tconst frag = document.createDocumentFragment();\n\t\t\t\tconst tabs = document.createElement('div');\n\t\t\t\ttabs.className = 'log-tabs';\n\t\t\t\ttabs.setAttribute('role', 'tablist');\n\t\t\t\tconst panels = {};\n\t\t\t\tconst tabKeys = ['request', 'response', 'meta', 'raw'];\n\t\t\t\tconst tabLabels = { request: 'Request', response: 'Response', meta: 'Meta', raw: 'Raw' };\n\n\t\t\t\ttabKeys.forEach(function (k, i) {\n\t\t\t\t\tconst btn = document.createElement('button');\n\t\t\t\t\tbtn.type = 'button';\n\t\t\t\t\tbtn.className = 'log-tab';\n\t\t\t\t\tbtn.setAttribute('role', 'tab');\n\t\t\t\t\tbtn.setAttribute('aria-selected', i === 0 ? 'true' : 'false');\n\t\t\t\t\tbtn.dataset.tab = k;\n\t\t\t\t\tbtn.textContent = tabLabels[k];\n\t\t\t\t\tbtn.addEventListener('click', function () { selectTab(k); });\n\t\t\t\t\ttabs.appendChild(btn);\n\t\t\t\t});\n\t\t\t\tfunction selectTab(name) {\n\t\t\t\t\ttabs.querySelectorAll('.log-tab').forEach(function (b) {\n\t\t\t\t\t\tb.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');\n\t\t\t\t\t});\n\t\t\t\t\tObject.keys(panels).forEach(function (k) {\n\t\t\t\t\t\tif (k === name) panels[k].removeAttribute('hidden');\n\t\t\t\t\t\telse panels[k].setAttribute('hidden', '');\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t\tfrag.appendChild(tabs);\n\n\t\t\t\t// Request panel\n\t\t\t\tpanels.request = mkPanel('request', false);\n\t\t\t\tconst reqTree = document.createElement('div');\n\t\t\t\treqTree.className = 'json-tree';\n\t\t\t\tpanels.request.appendChild(reqTree);\n\t\t\t\tjsonTree(reqTree, ctx.req, { collapsedAtDepth: 2 });\n\t\t\t\tfrag.appendChild(panels.request);\n\n\t\t\t\t// Response panel\n\t\t\t\tpanels.response = mkPanel('response', true);\n\t\t\t\tconst respTree = document.createElement('div');\n\t\t\t\trespTree.className = 'json-tree';\n\t\t\t\tpanels.response.appendChild(respTree);\n\t\t\t\tjsonTree(respTree, ctx.payload, { collapsedAtDepth: 2 });\n\t\t\t\tif (ctx.envelope) {\n\t\t\t\t\tconst env = document.createElement('details');\n\t\t\t\t\tenv.className = 'envelope-toggle';\n\t\t\t\t\tconst sum = document.createElement('summary');\n\t\t\t\t\tsum.textContent = 'envelope';\n\t\t\t\t\tenv.appendChild(sum);\n\t\t\t\t\tconst envTree = document.createElement('div');\n\t\t\t\t\tenvTree.className = 'json-tree';\n\t\t\t\t\tenv.appendChild(envTree);\n\t\t\t\t\tjsonTree(envTree, ctx.envelope, { collapsedAtDepth: 1 });\n\t\t\t\t\tpanels.response.appendChild(env);\n\t\t\t\t}\n\t\t\t\tfrag.appendChild(panels.response);\n\n\t\t\t\t// Meta panel\n\t\t\t\tpanels.meta = mkPanel('meta', true);\n\t\t\t\tconst meta = document.createElement('div');\n\t\t\t\tmeta.className = 'log-meta';\n\t\t\t\tmeta.appendChild(metaRow('called at', formatCalledAt(ctx.calledAt)));\n\t\t\t\tconst durLine = document.createElement('span');\n\t\t\t\tdurLine.className = durationTierClassJS(ctx.ms);\n\t\t\t\tdurLine.textContent = ctx.ms + 'ms';\n\t\t\t\tmeta.appendChild(metaRow('duration', durLine));\n\t\t\t\tmeta.appendChild(metaRow('success', ctx.ok ? 'true' : 'false'));\n\t\t\t\tif (ctx.errStr) {\n\t\t\t\t\tconst errEl = document.createElement('code');\n\t\t\t\t\terrEl.style.color = '#eb5757';\n\t\t\t\t\terrEl.textContent = ctx.errStr;\n\t\t\t\t\tmeta.appendChild(metaRow('error', errEl));\n\t\t\t\t}\n\t\t\t\tpanels.meta.appendChild(meta);\n\t\t\t\tfrag.appendChild(panels.meta);\n\n\t\t\t\t// Raw panel\n\t\t\t\tpanels.raw = mkPanel('raw', true);\n\t\t\t\tconst rawReqLabel = document.createElement('strong');\n\t\t\t\trawReqLabel.textContent = 'Request';\n\t\t\t\tpanels.raw.appendChild(rawReqLabel);\n\t\t\t\tconst rawReqPre = document.createElement('pre');\n\t\t\t\trawReqPre.textContent = ctx.rawReq || '—';\n\t\t\t\tpanels.raw.appendChild(rawReqPre);\n\t\t\t\tconst rawRespLabel = document.createElement('strong');\n\t\t\t\trawRespLabel.textContent = 'Response';\n\t\t\t\tpanels.raw.appendChild(rawRespLabel);\n\t\t\t\tconst rawRespPre = document.createElement('pre');\n\t\t\t\trawRespPre.textContent = ctx.rawResp || '—';\n\t\t\t\tpanels.raw.appendChild(rawRespPre);\n\t\t\t\tfrag.appendChild(panels.raw);\n\n\t\t\t\treturn frag;\n\t\t\t}\n\n\t\t\tfunction mkPanel(name, hidden) {\n\t\t\t\tconst p = document.createElement('div');\n\t\t\t\tp.className = 'log-tab-panel';\n\t\t\t\tp.setAttribute('role', 'tabpanel');\n\t\t\t\tp.dataset.tabPanel = name;\n\t\t\t\tif (hidden) p.setAttribute('hidden', '');\n\t\t\t\treturn p;\n\t\t\t}\n\t\t\tfunction metaRow(label, value) {\n\t\t\t\tconst row = document.createElement('div');\n\t\t\t\tconst l = document.createElement('span');\n\t\t\t\tl.className = 'meta-label';\n\t\t\t\tl.textContent = label;\n\t\t\t\trow.appendChild(l);\n\t\t\t\tif (value instanceof Node) row.appendChild(value);\n\t\t\t\telse { const v = document.createElement('span'); v.textContent = value; row.appendChild(v); }\n\t\t\t\treturn row;\n\t\t\t}\n\t\t\tfunction formatCalledAt(iso) {\n\t\t\t\tif (!iso) return '';\n\t\t\t\ttry {\n\t\t\t\t\tconst d = new Date(iso);\n\t\t\t\t\treturn dtFmt.format(d) + ' (' + d.toISOString() + ')';\n\t\t\t\t} catch (_) { return iso; }\n\t\t\t}\n\n\t\t\t// ── jsonTree (Stage 3 — preserved) ──────────\n\t\t\tfunction jsonTree(container, value, opts) {\n\t\t\t\tconst collapsedAtDepth = (opts && typeof opts.collapsedAtDepth === 'number') ? opts.collapsedAtDepth : 2;\n\t\t\t\tcontainer.appendChild(renderNode(value, [], 0, collapsedAtDepth));\n\t\t\t}\n\t\t\tfunction renderNode(value, path, depth, collapseAt) {\n\t\t\t\tif (value === null) return leafSpan('null', 'json-null', value);\n\t\t\t\tconst t = Array.isArray(value) ? 'array' : typeof value;\n\t\t\t\tif (t === 'string')  return renderString(value);\n\t\t\t\tif (t === 'number')  return leafSpan(String(value), 'json-number', value);\n\t\t\t\tif (t === 'boolean') return leafSpan(String(value), 'json-bool',   value);\n\t\t\t\tif (t === 'array')   return renderArray(value, path, depth, collapseAt);\n\t\t\t\tif (t === 'object')  return renderObject(value, path, depth, collapseAt);\n\t\t\t\treturn leafSpan(String(value), 'json-null', value);\n\t\t\t}\n\t\t\tfunction leafSpan(text, cls, raw) {\n\t\t\t\tconst s = document.createElement('span');\n\t\t\t\ts.className = cls + ' json-leaf';\n\t\t\t\ts.textContent = text;\n\t\t\t\ts.title = 'click to copy';\n\t\t\t\ts.addEventListener('click', function (ev) {\n\t\t\t\t\tev.stopPropagation();\n\t\t\t\t\tcopyText(String(raw));\n\t\t\t\t});\n\t\t\t\treturn s;\n\t\t\t}\n\t\t\tfunction renderString(value) {\n\t\t\t\tconst TRUNC = 200;\n\t\t\t\tif (value.length > TRUNC) {\n\t\t\t\t\tconst wrap = document.createElement('span');\n\t\t\t\t\twrap.className = 'json-string';\n\t\t\t\t\tconst display = document.createElement('span');\n\t\t\t\t\tdisplay.className = 'json-leaf';\n\t\t\t\t\tdisplay.textContent = '\"' + value.slice(0, TRUNC) + '…\"';\n\t\t\t\t\tdisplay.title = 'click to copy (truncated)';\n\t\t\t\t\tdisplay.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(value); });\n\t\t\t\t\twrap.appendChild(display);\n\t\t\t\t\tconst btn = document.createElement('button');\n\t\t\t\t\tbtn.type = 'button';\n\t\t\t\t\tbtn.className = 'json-copy-full';\n\t\t\t\t\tbtn.textContent = 'Copy full';\n\t\t\t\t\tbtn.title = 'copy full string';\n\t\t\t\t\tbtn.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(value); });\n\t\t\t\t\twrap.appendChild(btn);\n\t\t\t\t\treturn wrap;\n\t\t\t\t}\n\t\t\t\tconst wrap = document.createElement('span');\n\t\t\t\twrap.className = 'json-string json-leaf';\n\t\t\t\twrap.textContent = '\"' + value + '\"';\n\t\t\t\twrap.title = 'click to copy';\n\t\t\t\twrap.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(value); });\n\t\t\t\treturn wrap;\n\t\t\t}\n\t\t\tfunction renderObject(obj, path, depth, collapseAt) {\n\t\t\t\tconst keys = Object.keys(obj);\n\t\t\t\tconst wrap = document.createElement('span');\n\t\t\t\tconst det = document.createElement('details');\n\t\t\t\tif (depth < collapseAt) det.open = true;\n\t\t\t\tconst sum = document.createElement('summary');\n\t\t\t\tsum.className = 'json-summary';\n\t\t\t\tsum.textContent = '{ ' + keys.length + (keys.length === 1 ? ' field' : ' fields') + ' }';\n\t\t\t\tdet.appendChild(sum);\n\t\t\t\tconst children = document.createElement('div');\n\t\t\t\tchildren.className = 'json-children';\n\t\t\t\tkeys.forEach(function (k) {\n\t\t\t\t\tchildren.appendChild(buildKeyedRow(k, obj[k], path.concat([k]), depth + 1, collapseAt));\n\t\t\t\t});\n\t\t\t\tdet.appendChild(children);\n\t\t\t\twrap.appendChild(det);\n\t\t\t\treturn wrap;\n\t\t\t}\n\t\t\tfunction renderArray(arr, path, depth, collapseAt) {\n\t\t\t\tconst wrap = document.createElement('span');\n\t\t\t\tconst det = document.createElement('details');\n\t\t\t\tif (depth < collapseAt) det.open = true;\n\t\t\t\tconst sum = document.createElement('summary');\n\t\t\t\tsum.className = 'json-summary';\n\t\t\t\tsum.textContent = '[ ' + arr.length + (arr.length === 1 ? ' item' : ' items') + ' ]';\n\t\t\t\tdet.appendChild(sum);\n\t\t\t\tconst children = document.createElement('div');\n\t\t\t\tchildren.className = 'json-children';\n\t\t\t\tarr.forEach(function (item, i) {\n\t\t\t\t\tchildren.appendChild(buildIndexRow(i, item, path.concat([i]), depth + 1, collapseAt));\n\t\t\t\t});\n\t\t\t\tdet.appendChild(children);\n\t\t\t\twrap.appendChild(det);\n\t\t\t\treturn wrap;\n\t\t\t}\n\t\t\tfunction buildKeyedRow(key, value, path, depth, collapseAt) {\n\t\t\t\tconst row = document.createElement('div');\n\t\t\t\trow.className = 'json-row';\n\t\t\t\tconst keyEl = document.createElement('span');\n\t\t\t\tkeyEl.className = 'json-key';\n\t\t\t\tkeyEl.textContent = key;\n\t\t\t\trow.appendChild(keyEl);\n\t\t\t\trow.appendChild(renderNode(value, path, depth, collapseAt));\n\t\t\t\tconst copyPath = document.createElement('button');\n\t\t\t\tcopyPath.type = 'button';\n\t\t\t\tcopyPath.className = 'json-copy-path';\n\t\t\t\tcopyPath.textContent = '⧉';\n\t\t\t\tcopyPath.title = 'copy path: ' + pathToString(path);\n\t\t\t\tcopyPath.addEventListener('click', function (ev) {\n\t\t\t\t\tev.stopPropagation();\n\t\t\t\t\tcopyText(pathToString(path));\n\t\t\t\t});\n\t\t\t\trow.appendChild(copyPath);\n\t\t\t\treturn row;\n\t\t\t}\n\t\t\tfunction buildIndexRow(idx, value, path, depth, collapseAt) {\n\t\t\t\tconst row = document.createElement('div');\n\t\t\t\trow.className = 'json-row';\n\t\t\t\tconst keyEl = document.createElement('span');\n\t\t\t\tkeyEl.className = 'json-key';\n\t\t\t\tkeyEl.textContent = '[' + idx + ']';\n\t\t\t\trow.appendChild(keyEl);\n\t\t\t\trow.appendChild(renderNode(value, path, depth, collapseAt));\n\t\t\t\tconst copyPath = document.createElement('button');\n\t\t\t\tcopyPath.type = 'button';\n\t\t\t\tcopyPath.className = 'json-copy-path';\n\t\t\t\tcopyPath.textContent = '⧉';\n\t\t\t\tcopyPath.title = 'copy path: ' + pathToString(path);\n\t\t\t\tcopyPath.addEventListener('click', function (ev) {\n\t\t\t\t\tev.stopPropagation();\n\t\t\t\t\tcopyText(pathToString(path));\n\t\t\t\t});\n\t\t\t\trow.appendChild(copyPath);\n\t\t\t\treturn row;\n\t\t\t}\n\t\t\tfunction pathToString(path) {\n\t\t\t\tlet s = '';\n\t\t\t\tpath.forEach(function (seg) {\n\t\t\t\t\tif (typeof seg === 'number') s += '[' + seg + ']';\n\t\t\t\t\telse s += (s === '' ? '' : '.') + seg;\n\t\t\t\t});\n\t\t\t\treturn s;\n\t\t\t}\n\t\t\tfunction copyText(text) {\n\t\t\t\ttry {\n\t\t\t\t\tif (navigator.clipboard && navigator.clipboard.writeText) {\n\t\t\t\t\t\tnavigator.clipboard.writeText(text);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t} catch (_) { /* fallthrough */ }\n\t\t\t\tconst ta = document.createElement('textarea');\n\t\t\t\tta.value = text;\n\t\t\t\tta.style.position = 'fixed';\n\t\t\t\tta.style.opacity = '0';\n\t\t\t\tdocument.body.appendChild(ta);\n\t\t\t\tta.select();\n\t\t\t\ttry { document.execCommand('copy'); } catch (_) {}\n\t\t\t\tdocument.body.removeChild(ta);\n\t\t\t}\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -476,228 +489,241 @@ func callLogRow(e gateway.CallEntry) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var21 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var21 == nil {
-			templ_7745c5c3_Var21 = templ.NopComponent
+		templ_7745c5c3_Var22 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var22 == nil {
+			templ_7745c5c3_Var22 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<details class=\"log-row\" style=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var22 string
-		templ_7745c5c3_Var22, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(logRowBorder(e.Success))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 581, Col: 33}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\" data-json-pending=\"1\" data-request=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<details class=\"log-row\" style=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var23 string
-		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(e.Request)
+		templ_7745c5c3_Var23, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(logRowBorder(e.Success))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 583, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1196, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" data-response=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" data-json-pending=\"1\" data-tool-name=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var24 string
-		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(e.Response)
+		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(e.ToolName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 584, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1198, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" data-called-at=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" data-request=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var25 string
-		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(e.CalledAt.UTC().Format(time.RFC3339Nano))
+		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(e.Request)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 585, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1199, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\" data-duration-ms=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\" data-response=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var26 string
-		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", e.DurationMs))
+		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(e.Response)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 586, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1200, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\" data-success=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\" data-called-at=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var27 string
-		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(boolStr(e.Success))
+		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(e.CalledAt.UTC().Format(time.RFC3339Nano))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 587, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1201, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\" data-error=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "\" data-duration-ms=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var28 string
-		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(e.Error)
+		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", e.DurationMs))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 588, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1202, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\"><summary class=\"log-summary\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		if e.Success {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<span class=\"state-badge state-connected\">ok</span> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<span class=\"state-badge state-error\">err</span> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<code>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\" data-success=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var29 string
-		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(e.ToolName)
+		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(boolStr(e.Success))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 596, Col: 21}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1203, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "</code> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "\" data-error=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var30 = []any{durationTierClass(e.DurationMs)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var30...)
+		var templ_7745c5c3_Var30 string
+		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(e.Error)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1204, Col: 22}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<span class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "\"><summary class=\"log-summary\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if e.Success {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "<span class=\"state-badge state-connected\">ok</span> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "<span class=\"state-badge state-error\">err</span> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<code>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var31 string
-		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var30).String())
+		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(e.ToolName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1212, Col: 21}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</code> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var32 string
-		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%dms", e.DurationMs))
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 597, Col: 86}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
+		var templ_7745c5c3_Var32 = []any{durationTierClass(e.DurationMs)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var32...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</span> <span class=\"dim\" style=\"margin-left: auto;\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<span class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var33 string
-		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(absoluteTime(&e.CalledAt))
+		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var32).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 598, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if e.Error != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "<span style=\"color: #eb5757;\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var34 string
-			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(e.Error)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 600, Col: 43}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</span>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
+		var templ_7745c5c3_Var34 string
+		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%dms", e.DurationMs))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1213, Col: 86}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "</summary><div class=\"log-payload\"><strong>Request</strong><pre>")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</span> <span class=\"dim\" style=\"margin-left: auto;\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var35 string
-		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(e.Request)
+		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(absoluteTime(&e.CalledAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 605, Col: 19}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1214, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</pre><strong>Response</strong><pre>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var36 string
-		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(e.Response)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 607, Col: 20}
+		if e.Error != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<span style=\"color: #eb5757;\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var36 string
+			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(e.Error)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1216, Col: 43}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "</span>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</summary><div class=\"log-payload\"><strong>Request</strong><pre>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</pre></div></details>")
+		var templ_7745c5c3_Var37 string
+		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(e.Request)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1221, Col: 19}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</pre><strong>Response</strong><pre>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var38 string
+		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(e.Response)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1223, Col: 20}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</pre></div></details>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -722,31 +748,31 @@ func toolList(tools []gateway.ToolInfo) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var37 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var37 == nil {
-			templ_7745c5c3_Var37 = templ.NopComponent
+		templ_7745c5c3_Var39 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var39 == nil {
+			templ_7745c5c3_Var39 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if len(tools) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<p class=\"dim\"><em>No tools registered yet — waiting for backend to connect.</em></p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<p class=\"dim\"><em>No tools registered yet — waiting for backend to connect.</em></p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<h3 style=\"margin-bottom: 1.25rem;\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<h3 style=\"margin-bottom: 1.25rem;\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var38 string
-			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Tools (%d)", len(tools)))
+			var templ_7745c5c3_Var40 string
+			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Tools (%d)", len(tools)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 618, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1234, Col: 42}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "</h3>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</h3>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -777,94 +803,94 @@ func toolCard(t gateway.ToolInfo) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var39 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var39 == nil {
-			templ_7745c5c3_Var39 = templ.NopComponent
+		templ_7745c5c3_Var41 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var41 == nil {
+			templ_7745c5c3_Var41 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<article style=\"margin-bottom: 1.25rem;\"><header><div class=\"tool-header\"><div><code>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "<article style=\"margin-bottom: 1.25rem;\"><header><div class=\"tool-header\"><div><code>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var40 string
-		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(t.Name)
+		var templ_7745c5c3_Var42 string
+		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(t.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 631, Col: 19}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1247, Col: 19}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</code> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</code> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if t.Title != "" && t.Title != t.Name {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "<span class=\"dim\" style=\"margin-left: 0.6rem;\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<span class=\"dim\" style=\"margin-left: 0.6rem;\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var41 string
-			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(t.Title)
+			var templ_7745c5c3_Var43 string
+			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t.Title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 633, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1249, Col: 62}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "</div><div class=\"badge-row\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</div><div class=\"badge-row\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if t.ReadOnly {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "<span class=\"state-badge badge-readonly\">read-only</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<span class=\"state-badge badge-readonly\">read-only</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if t.Idempotent {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "<span class=\"state-badge badge-idempotent\">idempotent</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<span class=\"state-badge badge-idempotent\">idempotent</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if t.Destructive != nil && *t.Destructive {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<span class=\"state-badge badge-destructive\">destructive</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<span class=\"state-badge badge-destructive\">destructive</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if t.OpenWorld != nil && *t.OpenWorld {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "<span class=\"state-badge\" style=\"background: #2a2a50; color: #a29bfe;\">open-world</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<span class=\"state-badge\" style=\"background: #2a2a50; color: #a29bfe;\">open-world</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "</div></div></header>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "</div></div></header>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if t.Description != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "<p style=\"margin: 0 0 0.75rem; font-size: 0.9em;\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "<p style=\"margin: 0 0 0.75rem; font-size: 0.9em;\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var42 string
-			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(t.Description)
+			var templ_7745c5c3_Var44 string
+			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t.Description)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 653, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1269, Col: 68}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -886,7 +912,7 @@ func toolCard(t gateway.ToolInfo) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "</article>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "</article>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -910,128 +936,128 @@ func paramsSection(params []gateway.ParamInfo) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var43 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var43 == nil {
-			templ_7745c5c3_Var43 = templ.NopComponent
+		templ_7745c5c3_Var45 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var45 == nil {
+			templ_7745c5c3_Var45 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if len(params) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<p class=\"dim\" style=\"font-size: 0.8em; margin: 0;\">No input parameters.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<p class=\"dim\" style=\"font-size: 0.8em; margin: 0;\">No input parameters.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<figure style=\"margin: 0; overflow-x: auto;\"><table class=\"params\"><thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th><th>Default</th></tr></thead> <tbody>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<figure style=\"margin: 0; overflow-x: auto;\"><table class=\"params\"><thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th><th>Default</th></tr></thead> <tbody>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, p := range params {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "<tr><td>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "<tr><td>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if p.Required {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<strong><code>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<strong><code>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var44 string
-					templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
+					var templ_7745c5c3_Var46 string
+					templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 686, Col: 31}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1302, Col: 31}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "</code></strong>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</code></strong>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<code class=\"dim\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "<code class=\"dim\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var45 string
-					templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
+					var templ_7745c5c3_Var47 string
+					templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 688, Col: 35}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1304, Col: 35}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</code>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</code>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "</td><td><span class=\"dim\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "</td><td><span class=\"dim\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var46 string
-				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(p.Type)
+				var templ_7745c5c3_Var48 string
+				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(p.Type)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 691, Col: 37}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1307, Col: 37}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "</span></td><td>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "</span></td><td>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if p.Required {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "<span style=\"color: #6fcf97; font-size: 0.9em;\">✓</span>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<span style=\"color: #6fcf97; font-size: 0.9em;\">✓</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "</td><td><span class=\"dim\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "</td><td><span class=\"dim\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var47 string
-				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(p.Description)
+				var templ_7745c5c3_Var49 string
+				templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(p.Description)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 697, Col: 44}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1313, Col: 44}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "</span></td><td>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</span></td><td>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if p.Default != "" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "<code class=\"dim\" style=\"font-size: 0.8em;\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<code class=\"dim\" style=\"font-size: 0.8em;\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var48 string
-					templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(p.Default)
+					var templ_7745c5c3_Var50 string
+					templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(p.Default)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 700, Col: 64}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/admin/ui/detail.templ`, Line: 1316, Col: 64}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</code>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "</code>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "</td></tr>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "</td></tr>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "</tbody></table></figure>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "</tbody></table></figure>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
