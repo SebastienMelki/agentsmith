@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/sebastienmelki/agentsmith/internal/gateway"
 )
@@ -131,18 +132,13 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 			const dialog = document.getElementById('log-dialog');
 			const log    = document.getElementById('call-log');
 			let esStarted = false;
+			const dtFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' });
 
-			// Connect SSE lazily on first open so we don't hold a connection
-			// when the user never opens the panel.
-			dialog.addEventListener('close', function () {
-				// nothing — keep SSE alive so we don't miss events
-			});
-
+			// On first dialog open: lazily start SSE and upgrade any
+			// server-rendered pending rows. Idempotent on subsequent opens.
 			dialog.addEventListener('toggle', function () {
-				if (!esStarted) {
-					esStarted = true;
-					startSSE();
-				}
+				if (!esStarted) { esStarted = true; startSSE(); }
+				log.querySelectorAll('[data-json-pending="1"]').forEach(upgradePending);
 			});
 
 			// Dismiss on backdrop click.
@@ -156,38 +152,441 @@ templ callLogDialog(backendName string, entries []gateway.CallEntry) {
 					const e = JSON.parse(ev.data);
 					const empty = document.getElementById('log-empty');
 					if (empty) empty.remove();
-					log.insertBefore(buildRow(e), log.firstChild);
+					const row = buildRow(e);
+					log.insertBefore(row, log.firstChild);
+					upgradePending(row);
 					while (log.children.length > 500) log.removeChild(log.lastChild);
 				});
 			}
 
+			function durationTierClassJS(ms) {
+				if (ms < 500)  return 'dur-fast';
+				if (ms < 2000) return 'dur-ok';
+				if (ms < 5000) return 'dur-slow';
+				return 'dur-bad';
+			}
+
 			function buildRow(e) {
-				const ok   = e.success;
+				const ok = !!e.success;
 				const wrap = document.createElement('details');
 				wrap.className = 'log-row';
 				wrap.style.cssText = ok
 					? 'border-left:3px solid #1a4731;padding-left:0.5rem;margin-bottom:0.4rem;'
 					: 'border-left:3px solid #4a1010;padding-left:0.5rem;margin-bottom:0.4rem;';
-				wrap.innerHTML =
-					'<summary class="log-summary">' +
-						'<span class="state-badge ' + (ok ? 'state-connected' : 'state-error') + '">' + (ok ? 'ok' : 'err') + '</span>' +
-						'<code>' + e.toolName + '</code>' +
-						'<span class="dim">' + e.durationMs + 'ms</span>' +
-						'<span class="dim" style="margin-left:auto">' + new Date(e.calledAt).toLocaleTimeString() + '</span>' +
-						(e.error ? '<span style="color:#eb5757">' + e.error + '</span>' : '') +
-					'</summary>' +
-					'<div class="log-payload">' +
-						'<strong>Request</strong><pre>' + (e.request  || '—') + '</pre>' +
-						'<strong>Response</strong><pre>' + (e.response || '—') + '</pre>' +
-					'</div>';
+				wrap.dataset.jsonPending = '1';
+				wrap.dataset.request     = e.request  || '';
+				wrap.dataset.response    = e.response || '';
+				wrap.dataset.calledAt    = e.calledAt || '';
+				wrap.dataset.durationMs  = String(e.durationMs || 0);
+				wrap.dataset.success     = ok ? '1' : '0';
+				wrap.dataset.error       = e.error || '';
+
+				const summary = document.createElement('summary');
+				summary.className = 'log-summary';
+
+				const badge = document.createElement('span');
+				badge.className = 'state-badge ' + (ok ? 'state-connected' : 'state-error');
+				badge.textContent = ok ? 'ok' : 'err';
+				summary.appendChild(badge);
+
+				const code = document.createElement('code');
+				code.textContent = e.toolName || '';
+				summary.appendChild(code);
+
+				const dur = document.createElement('span');
+				dur.className = durationTierClassJS(+e.durationMs || 0);
+				dur.textContent = (e.durationMs || 0) + 'ms';
+				summary.appendChild(dur);
+
+				const ts = document.createElement('span');
+				ts.className = 'dim';
+				ts.style.marginLeft = 'auto';
+				try { ts.textContent = new Date(e.calledAt).toLocaleTimeString(); }
+				catch (_) { ts.textContent = ''; }
+				summary.appendChild(ts);
+
+				if (e.error) {
+					const err = document.createElement('span');
+					err.style.color = '#eb5757';
+					err.textContent = e.error;
+					summary.appendChild(err);
+				}
+
+				wrap.appendChild(summary);
+
+				const payload = document.createElement('div');
+				payload.className = 'log-payload';
+				wrap.appendChild(payload);
 				return wrap;
+			}
+
+			function safeParse(s) {
+				try { return s ? JSON.parse(s) : null; }
+				catch (_) { return null; }
+			}
+
+			function unwrapEnvelope(val) {
+				if (!val || typeof val !== 'object') return { envelope: null, payload: val };
+				if (!Array.isArray(val.content) || val.content.length === 0)
+					return { envelope: null, payload: val };
+				for (const part of val.content) {
+					if (part && part.type === 'text' && typeof part.text === 'string') {
+						try {
+							const parsed = JSON.parse(part.text);
+							return { envelope: val, payload: parsed };
+						} catch (_) { /* fall through */ }
+					}
+				}
+				return { envelope: null, payload: val };
+			}
+
+			function upgradePending(row) {
+				if (row.dataset.jsonPending !== '1') return;
+				const reqVal  = safeParse(row.dataset.request);
+				const respRaw = safeParse(row.dataset.response);
+				const { envelope, payload } = unwrapEnvelope(respRaw);
+
+				const old = row.querySelector('.log-payload');
+				if (!old) { row.dataset.jsonPending = ''; return; }
+
+				const body = buildTabbed({
+					req:      reqVal,
+					payload:  payload,
+					envelope: envelope,
+					calledAt: row.dataset.calledAt || '',
+					ms:       +row.dataset.durationMs || 0,
+					ok:       row.dataset.success === '1',
+					errStr:   row.dataset.error || '',
+					rawReq:   row.dataset.request || '',
+					rawResp:  row.dataset.response || '',
+				});
+				old.innerHTML = '';
+				old.appendChild(body);
+				row.dataset.jsonPending = '';
+			}
+
+			function buildTabbed(ctx) {
+				const frag = document.createDocumentFragment();
+
+				const tabs = document.createElement('div');
+				tabs.className = 'log-tabs';
+				tabs.setAttribute('role', 'tablist');
+
+				const panels = {};
+				const tabKeys = ['request', 'response', 'meta', 'raw'];
+				const tabLabels = { request: 'Request', response: 'Response', meta: 'Meta', raw: 'Raw' };
+
+				tabKeys.forEach(function (k, i) {
+					const btn = document.createElement('button');
+					btn.type = 'button';
+					btn.className = 'log-tab';
+					btn.setAttribute('role', 'tab');
+					btn.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+					btn.dataset.tab = k;
+					btn.textContent = tabLabels[k];
+					btn.addEventListener('click', function () { selectTab(k); });
+					tabs.appendChild(btn);
+				});
+
+				function selectTab(name) {
+					tabs.querySelectorAll('.log-tab').forEach(function (b) {
+						b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false');
+					});
+					Object.keys(panels).forEach(function (k) {
+						if (k === name) panels[k].removeAttribute('hidden');
+						else panels[k].setAttribute('hidden', '');
+					});
+				}
+
+				frag.appendChild(tabs);
+
+				// Request panel
+				panels.request = mkPanel('request', false);
+				const reqTree = document.createElement('div');
+				reqTree.className = 'json-tree';
+				panels.request.appendChild(reqTree);
+				jsonTree(reqTree, ctx.req, { collapsedAtDepth: 2 });
+				frag.appendChild(panels.request);
+
+				// Response panel
+				panels.response = mkPanel('response', true);
+				const respTree = document.createElement('div');
+				respTree.className = 'json-tree';
+				panels.response.appendChild(respTree);
+				jsonTree(respTree, ctx.payload, { collapsedAtDepth: 2 });
+				if (ctx.envelope) {
+					const env = document.createElement('details');
+					env.className = 'envelope-toggle';
+					const sum = document.createElement('summary');
+					sum.textContent = 'envelope';
+					env.appendChild(sum);
+					const envTree = document.createElement('div');
+					envTree.className = 'json-tree';
+					env.appendChild(envTree);
+					jsonTree(envTree, ctx.envelope, { collapsedAtDepth: 1 });
+					panels.response.appendChild(env);
+				}
+				frag.appendChild(panels.response);
+
+				// Meta panel
+				panels.meta = mkPanel('meta', true);
+				const meta = document.createElement('div');
+				meta.className = 'log-meta';
+				meta.appendChild(metaRow('called at', formatCalledAt(ctx.calledAt)));
+				const durLine = document.createElement('span');
+				durLine.className = durationTierClassJS(ctx.ms);
+				durLine.textContent = ctx.ms + 'ms';
+				meta.appendChild(metaRow('duration', durLine));
+				meta.appendChild(metaRow('success', ctx.ok ? 'true' : 'false'));
+				if (ctx.errStr) {
+					const errEl = document.createElement('code');
+					errEl.style.color = '#eb5757';
+					errEl.textContent = ctx.errStr;
+					meta.appendChild(metaRow('error', errEl));
+				}
+				panels.meta.appendChild(meta);
+				frag.appendChild(panels.meta);
+
+				// Raw panel
+				panels.raw = mkPanel('raw', true);
+				const rawReqLabel = document.createElement('strong');
+				rawReqLabel.textContent = 'Request';
+				panels.raw.appendChild(rawReqLabel);
+				const rawReqPre = document.createElement('pre');
+				rawReqPre.textContent = ctx.rawReq || '—';
+				panels.raw.appendChild(rawReqPre);
+				const rawRespLabel = document.createElement('strong');
+				rawRespLabel.textContent = 'Response';
+				panels.raw.appendChild(rawRespLabel);
+				const rawRespPre = document.createElement('pre');
+				rawRespPre.textContent = ctx.rawResp || '—';
+				panels.raw.appendChild(rawRespPre);
+				frag.appendChild(panels.raw);
+
+				return frag;
+			}
+
+			function mkPanel(name, hidden) {
+				const p = document.createElement('div');
+				p.className = 'log-tab-panel';
+				p.setAttribute('role', 'tabpanel');
+				p.dataset.tabPanel = name;
+				if (hidden) p.setAttribute('hidden', '');
+				return p;
+			}
+
+			function metaRow(label, value) {
+				const row = document.createElement('div');
+				const l = document.createElement('span');
+				l.className = 'meta-label';
+				l.textContent = label;
+				row.appendChild(l);
+				if (value instanceof Node) row.appendChild(value);
+				else { const v = document.createElement('span'); v.textContent = value; row.appendChild(v); }
+				return row;
+			}
+
+			function formatCalledAt(iso) {
+				if (!iso) return '';
+				try {
+					const d = new Date(iso);
+					return dtFmt.format(d) + ' (' + d.toISOString() + ')';
+				} catch (_) {
+					return iso;
+				}
+			}
+
+			// ── jsonTree (vanilla, no deps) ─────────────────────────────
+
+			function jsonTree(container, value, opts) {
+				const collapsedAtDepth = (opts && typeof opts.collapsedAtDepth === 'number') ? opts.collapsedAtDepth : 2;
+				container.appendChild(renderNode(value, [], 0, collapsedAtDepth));
+			}
+
+			function renderNode(value, path, depth, collapseAt) {
+				if (value === null) return leafSpan('null', 'json-null', value);
+				const t = Array.isArray(value) ? 'array' : typeof value;
+				if (t === 'string')  return renderString(value);
+				if (t === 'number')  return leafSpan(String(value), 'json-number', value);
+				if (t === 'boolean') return leafSpan(String(value), 'json-bool',   value);
+				if (t === 'array')   return renderArray(value, path, depth, collapseAt);
+				if (t === 'object')  return renderObject(value, path, depth, collapseAt);
+				return leafSpan(String(value), 'json-null', value);
+			}
+
+			function leafSpan(text, cls, raw) {
+				const s = document.createElement('span');
+				s.className = cls + ' json-leaf';
+				s.textContent = text;
+				s.title = 'click to copy';
+				s.addEventListener('click', function (ev) {
+					ev.stopPropagation();
+					copyText(String(raw));
+				});
+				return s;
+			}
+
+			function renderString(value) {
+				const TRUNC = 200;
+				if (value.length > TRUNC) {
+					const wrap = document.createElement('span');
+					wrap.className = 'json-string';
+					const display = document.createElement('span');
+					display.className = 'json-leaf';
+					display.textContent = '"' + value.slice(0, TRUNC) + '…"';
+					display.title = 'click to copy (truncated)';
+					display.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(value); });
+					wrap.appendChild(display);
+					const btn = document.createElement('button');
+					btn.type = 'button';
+					btn.className = 'json-copy-full';
+					btn.textContent = 'Copy full';
+					btn.title = 'copy full string';
+					btn.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(value); });
+					wrap.appendChild(btn);
+					return wrap;
+				}
+				const wrap = document.createElement('span');
+				wrap.className = 'json-string json-leaf';
+				wrap.textContent = '"' + value + '"';
+				wrap.title = 'click to copy';
+				wrap.addEventListener('click', function (ev) { ev.stopPropagation(); copyText(value); });
+				return wrap;
+			}
+
+			function renderObject(obj, path, depth, collapseAt) {
+				const keys = Object.keys(obj);
+				const wrap = document.createElement('span');
+
+				const det = document.createElement('details');
+				if (depth < collapseAt) det.open = true;
+				const sum = document.createElement('summary');
+				sum.className = 'json-summary';
+				sum.textContent = '{ ' + keys.length + (keys.length === 1 ? ' field' : ' fields') + ' }';
+				det.appendChild(sum);
+
+				const children = document.createElement('div');
+				children.className = 'json-children';
+				keys.forEach(function (k) {
+					children.appendChild(buildKeyedRow(k, obj[k], path.concat([k]), depth + 1, collapseAt));
+				});
+				det.appendChild(children);
+				wrap.appendChild(det);
+				return wrap;
+			}
+
+			function renderArray(arr, path, depth, collapseAt) {
+				const wrap = document.createElement('span');
+				const det = document.createElement('details');
+				if (depth < collapseAt) det.open = true;
+				const sum = document.createElement('summary');
+				sum.className = 'json-summary';
+				sum.textContent = '[ ' + arr.length + (arr.length === 1 ? ' item' : ' items') + ' ]';
+				det.appendChild(sum);
+
+				const children = document.createElement('div');
+				children.className = 'json-children';
+				arr.forEach(function (item, i) {
+					children.appendChild(buildIndexRow(i, item, path.concat([i]), depth + 1, collapseAt));
+				});
+				det.appendChild(children);
+				wrap.appendChild(det);
+				return wrap;
+			}
+
+			function buildKeyedRow(key, value, path, depth, collapseAt) {
+				const row = document.createElement('div');
+				row.className = 'json-row';
+
+				const keyEl = document.createElement('span');
+				keyEl.className = 'json-key';
+				keyEl.textContent = key;
+				row.appendChild(keyEl);
+
+				row.appendChild(renderNode(value, path, depth, collapseAt));
+
+				const copyPath = document.createElement('button');
+				copyPath.type = 'button';
+				copyPath.className = 'json-copy-path';
+				copyPath.textContent = '⧉';
+				copyPath.title = 'copy path: ' + pathToString(path);
+				copyPath.addEventListener('click', function (ev) {
+					ev.stopPropagation();
+					copyText(pathToString(path));
+				});
+				row.appendChild(copyPath);
+				return row;
+			}
+
+			function buildIndexRow(idx, value, path, depth, collapseAt) {
+				const row = document.createElement('div');
+				row.className = 'json-row';
+
+				const keyEl = document.createElement('span');
+				keyEl.className = 'json-key';
+				keyEl.textContent = '[' + idx + ']';
+				row.appendChild(keyEl);
+
+				row.appendChild(renderNode(value, path, depth, collapseAt));
+
+				const copyPath = document.createElement('button');
+				copyPath.type = 'button';
+				copyPath.className = 'json-copy-path';
+				copyPath.textContent = '⧉';
+				copyPath.title = 'copy path: ' + pathToString(path);
+				copyPath.addEventListener('click', function (ev) {
+					ev.stopPropagation();
+					copyText(pathToString(path));
+				});
+				row.appendChild(copyPath);
+				return row;
+			}
+
+			function pathToString(path) {
+				let s = '';
+				path.forEach(function (seg) {
+					if (typeof seg === 'number') s += '[' + seg + ']';
+					else s += (s === '' ? '' : '.') + seg;
+				});
+				return s;
+			}
+
+			function copyText(text) {
+				try {
+					if (navigator.clipboard && navigator.clipboard.writeText) {
+						navigator.clipboard.writeText(text);
+						return;
+					}
+				} catch (_) { /* fallthrough */ }
+				const ta = document.createElement('textarea');
+				ta.value = text;
+				ta.style.position = 'fixed';
+				ta.style.opacity = '0';
+				document.body.appendChild(ta);
+				ta.select();
+				try { document.execCommand('copy'); } catch (_) {}
+				document.body.removeChild(ta);
 			}
 		})();
 	</script>
 }
 
+// callLogRow renders one call entry on initial replay (server-rendered).
+// It emits the raw JSON in data-* attributes plus a legacy <pre> fallback,
+// then a JS upgrade pass triggered by the dialog's `toggle` event swaps
+// the fallback for the tabbed JSON-tree view.
 templ callLogRow(e gateway.CallEntry) {
-	<details class="log-row" style={ logRowBorder(e.Success) }>
+	<details
+		class="log-row"
+		style={ logRowBorder(e.Success) }
+		data-json-pending="1"
+		data-request={ e.Request }
+		data-response={ e.Response }
+		data-called-at={ e.CalledAt.UTC().Format(time.RFC3339Nano) }
+		data-duration-ms={ fmt.Sprintf("%d", e.DurationMs) }
+		data-success={ boolStr(e.Success) }
+		data-error={ e.Error }
+	>
 		<summary class="log-summary">
 			if e.Success {
 				<span class="state-badge state-connected">ok</span>
@@ -195,7 +594,7 @@ templ callLogRow(e gateway.CallEntry) {
 				<span class="state-badge state-error">err</span>
 			}
 			<code>{ e.ToolName }</code>
-			<span class="dim">{ fmt.Sprintf("%dms", e.DurationMs) }</span>
+			<span class={ durationTierClass(e.DurationMs) }>{ fmt.Sprintf("%dms", e.DurationMs) }</span>
 			<span class="dim" style="margin-left: auto;">{ absoluteTime(&e.CalledAt) }</span>
 			if e.Error != "" {
 				<span style="color: #eb5757;">{ e.Error }</span>

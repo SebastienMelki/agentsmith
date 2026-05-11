@@ -52,6 +52,31 @@ func logRowBorder(success bool) string {
 	return "border-left: 3px solid #4a1010; padding-left: 0.5rem; margin-bottom: 0.4rem;"
 }
 
+// durationTierClass maps a latency in milliseconds onto a CSS class that
+// consumes the --as-lat-* tokens defined in layout.templ. Mirrored in the
+// call-log dialog JS so SSE-built rows agree with server-rendered ones.
+func durationTierClass(ms int64) string {
+	switch {
+	case ms < 500:
+		return "dur-fast"
+	case ms < 2000:
+		return "dur-ok"
+	case ms < 5000:
+		return "dur-slow"
+	default:
+		return "dur-bad"
+	}
+}
+
+// boolStr renders a bool as "1" or "0" — used for data-* attributes so the
+// upgrade pass JS can do strict string comparisons.
+func boolStr(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
+
 // relativeTime formats an optional timestamp as a human-friendly relative
 // string ("just now", "3 minutes ago", etc.). Used as the visible text.
 func relativeTime(t *time.Time) string {

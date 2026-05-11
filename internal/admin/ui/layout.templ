@@ -267,6 +267,122 @@ templ sharedHead(title string) {
 				margin: 0;
 				box-shadow: 0 2px 12px rgba(0,0,0,0.4);
 			}
+
+			/* ── duration tier coloring (consumes --as-lat-* tokens) ── */
+			.dur-fast { color: var(--as-lat-fast); }
+			.dur-ok   { color: var(--as-lat-ok);   }
+			.dur-slow { color: var(--as-lat-slow); }
+			.dur-bad  { color: var(--as-lat-bad);  }
+
+			/* ── call-log tabs (Stage 3) ── */
+			.log-tabs {
+				display: flex;
+				gap: 0.25rem;
+				margin: 0.4rem 0 0.5rem;
+				border-bottom: 1px solid rgba(255,255,255,0.08);
+			}
+			.log-tab {
+				appearance: none;
+				background: transparent;
+				border: none;
+				color: var(--as-muted);
+				padding: 0.25rem 0.6rem;
+				cursor: pointer;
+				font-size: 0.78em;
+				border-bottom: 2px solid transparent;
+				margin: 0;
+				border-radius: 0;
+				width: auto;
+			}
+			.log-tab[aria-selected="true"] {
+				color: var(--pico-color);
+				border-bottom-color: var(--as-info);
+			}
+			.log-tab-panel { padding: 0.25rem 0; }
+			.log-tab-panel[hidden] { display: none; }
+			.log-tab-panel > pre {
+				font-size: 0.78em;
+				max-height: 300px;
+				overflow: auto;
+				background: var(--pico-card-background-color);
+				padding: 0.5rem;
+				border-radius: 4px;
+				margin: 0.25rem 0 0.75rem;
+			}
+			.log-meta { font-size: 0.85em; line-height: 1.7; }
+			.log-meta .meta-label { color: var(--as-muted); margin-right: 0.5rem; }
+
+			/* ── JSON tree (Stage 3) ── */
+			.json-tree {
+				font-family: var(--as-font-mono);
+				font-size: 0.78em;
+				line-height: 1.55;
+			}
+			.json-row {
+				display: flex;
+				align-items: baseline;
+				flex-wrap: wrap;
+				gap: 0.35rem;
+				position: relative;
+			}
+			.json-row > .json-children {
+				flex-basis: 100%;
+				padding-left: 1rem;
+				border-left: 1px dotted rgba(255,255,255,0.08);
+				margin-left: 0.25rem;
+			}
+			.json-toggle {
+				cursor: pointer;
+				user-select: none;
+				color: var(--as-muted);
+				width: 1ch;
+				display: inline-block;
+			}
+			.json-key { color: var(--as-muted); }
+			.json-key::after { content: ":"; padding-right: 0.2rem; }
+			.json-summary { color: var(--as-muted); cursor: pointer; }
+			.json-string { color: var(--as-info); word-break: break-word; }
+			.json-number { color: var(--as-warn); }
+			.json-bool   { color: var(--as-ok);   }
+			.json-null   { color: var(--as-muted); font-style: italic; }
+			.json-leaf   { cursor: pointer; }
+			.json-leaf:hover {
+				background: rgba(255,255,255,0.06);
+				border-radius: 2px;
+			}
+			.json-copy-path,
+			.json-copy-full {
+				opacity: 0;
+				margin-left: 0.25rem;
+				cursor: pointer;
+				background: rgba(255,255,255,0.08);
+				border: none;
+				border-radius: 3px;
+				color: var(--as-muted);
+				font-size: 0.85em;
+				padding: 0 0.35rem;
+				width: auto;
+			}
+			.json-row:hover > .json-copy-path,
+			.json-row:hover .json-copy-full {
+				opacity: 1;
+			}
+
+			/* ── envelope reveal (under Response tree) ── */
+			.envelope-toggle {
+				margin-top: 0.5rem;
+				padding-top: 0.4rem;
+				border-top: 1px dashed rgba(255,255,255,0.08);
+			}
+			.envelope-toggle > summary {
+				cursor: pointer;
+				user-select: none;
+				color: var(--as-muted);
+				font-size: 0.85em;
+				list-style: none;
+			}
+			.envelope-toggle > summary::before { content: "▸ "; }
+			.envelope-toggle[open] > summary::before { content: "▾ "; }
 		</style>
 	</head>
 }
