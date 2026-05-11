@@ -39,6 +39,9 @@ agentsmith.env
 # working planning docs (not versioned)
 /plan.md
 
+# Playwright MCP artefacts (screenshots + console logs from local verification)
+/.playwright-mcp/
+
 # ----- editors -----
 .idea/
 .vscode/

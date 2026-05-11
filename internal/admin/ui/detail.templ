@@ -253,22 +253,13 @@ templ toolCard(t gateway.ToolInfo) {
 		if t.Description != "" {
 			<p style="margin: 0 0 0.75rem; font-size: 0.9em;">{ t.Description }</p>
 		}
-		@paramsSection(t.Params)
 		if t.InputSchema != "" {
-			<details style="margin-top: 0.75rem;">
-				<summary class="dim" style="font-size: 0.8em; cursor: pointer; user-select: none;">
-					Full input schema
-				</summary>
-				<pre style="font-size: 0.75em; margin-top: 0.5rem; overflow-x: auto; padding: 0.75rem; border-radius: 6px;"><code>{ t.InputSchema }</code></pre>
-			</details>
+			@schemaSection("Input", t.InputSchema)
+		} else if len(t.Params) > 0 {
+			@paramsSection(t.Params)
 		}
 		if t.OutputSchema != "" {
-			<details style="margin-top: 0.5rem;">
-				<summary class="dim" style="font-size: 0.8em; cursor: pointer; user-select: none;">
-					Output schema
-				</summary>
-				<pre style="font-size: 0.75em; margin-top: 0.5rem; overflow-x: auto; padding: 0.75rem; border-radius: 6px;"><code>{ t.OutputSchema }</code></pre>
-			</details>
+			@schemaSection("Output", t.OutputSchema)
 		}
 	</article>
 }
