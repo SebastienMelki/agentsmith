@@ -9,7 +9,7 @@
 //	GET /backends                  — per-backend status array (JSON)
 //	GET /ui/backends               — BackendsPanel htmx partial
 //	GET /ui/backends/{name}        — backend detail page (HTML)
-//	GET /ui/backends/{name}/partial — BackendDetailContent htmx partial
+//	GET /ui/backends/{name}/status — detail-page status-strip partial (htmx poll)
 package admin
 
 import (
@@ -50,7 +50,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /backends", s.handleBackends)
 	mux.HandleFunc("GET /ui/backends", s.handleBackendsUI)
 	mux.HandleFunc("GET /ui/backends/{name}/logs/stream", s.handleLogStream)
-	mux.HandleFunc("GET /ui/backends/{name}/partial", s.handleBackendDetailPartial)
+	mux.HandleFunc("GET /ui/backends/{name}/status", s.handleBackendDetailStatus)
 	mux.HandleFunc("GET /ui/backends/{name}", s.handleBackendDetail)
 	mux.HandleFunc("GET /{$}", s.handleDashboard)
 	return mux
@@ -129,9 +129,10 @@ func (s *Server) handleBackendDetail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleBackendDetailPartial returns the BackendDetailContent htmx partial.
-// htmx polls this every 5 s from the detail page and swaps in fresh data.
-func (s *Server) handleBackendDetailPartial(w http.ResponseWriter, r *http.Request) {
+// handleBackendDetailStatus returns the polled status-strip wrapper. The tool
+// list isn't included here — keeping it out of the 5 s swap is what preserves
+// users' expanded <details> state.
+func (s *Server) handleBackendDetailStatus(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	detail, ok := s.gw.BackendByName(name)
 	if !ok {
@@ -139,8 +140,8 @@ func (s *Server) handleBackendDetailPartial(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := ui.BackendDetailContent(detail).Render(r.Context(), w); err != nil {
-		slog.Error("admin: failed to render backend detail partial", "name", name, "error", err)
+	if err := ui.StatusPolled(detail).Render(r.Context(), w); err != nil {
+		slog.Error("admin: failed to render backend status partial", "name", name, "error", err)
 	}
 }
 
