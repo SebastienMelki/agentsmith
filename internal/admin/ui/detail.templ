@@ -35,13 +35,26 @@ templ BackendDetailPage(detail gateway.BackendDetail) {
 	</html>
 }
 
-// BackendDetailContent is served both inline (on page load) and as the htmx
-// partial at GET /ui/backends/{name}/partial. It replaces itself every 5 s,
-// so both the status strip and the tool list stay live without a full reload.
+// BackendDetailContent is the live region of the detail page. Only the status
+// strip polls (every 5 s); the tool list stays static so users don't lose
+// their expanded <details> state every refresh tick. New tools require a
+// manual page reload to appear — acceptable trade-off since the tool catalog
+// is fixed at backend startup. Tool-list freshness is revisited in Stage 5.
 templ BackendDetailContent(detail gateway.BackendDetail) {
-	<div hx-get={ "/ui/backends/" + detail.Name + "/partial" } hx-trigger="every 5s" hx-swap="outerHTML">
-		@detailStatusStrip(detail)
-		@toolList(detail.Tools)
+	@StatusPolled(detail)
+	@toolList(detail.Tools)
+}
+
+// StatusPolled wraps the status strip in the htmx-polled region. The wrapper
+// is preserved on every swap by re-emitting itself from the /status endpoint.
+templ StatusPolled(d gateway.BackendDetail) {
+	<div
+		id="detail-status-region"
+		hx-get={ "/ui/backends/" + d.Name + "/status" }
+		hx-trigger="every 5s"
+		hx-swap="outerHTML"
+	>
+		@detailStatusStrip(d)
 	</div>
 }
 
