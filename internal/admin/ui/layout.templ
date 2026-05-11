@@ -117,6 +117,95 @@ templ sharedHead(title string) {
 			table.params td, table.params th { white-space: nowrap; }
 			table.params td:last-child        { white-space: normal; }
 
+			/* ── schema tree (Stage 2) ───────────────────── */
+			.schema-section { margin-top: 1rem; }
+			.schema-section-header {
+				display: flex;
+				align-items: center;
+				gap: 0.75rem;
+				margin-bottom: 0.5rem;
+			}
+			.schema-row {
+				padding: 0.4rem 0;
+				border-bottom: 1px solid rgba(255,255,255,0.06);
+			}
+			.schema-row:last-child { border-bottom: none; }
+			.schema-row-main {
+				display: flex;
+				align-items: center;
+				gap: 0.5rem;
+				flex-wrap: wrap;
+			}
+			.schema-row-desc {
+				color: var(--as-muted);
+				font-size: 0.85em;
+				margin: 0.2rem 0 0;
+			}
+			.schema-children { margin-top: 0.3rem; }
+			.schema-details > summary {
+				color: var(--as-muted);
+				font-size: 0.78em;
+				cursor: pointer;
+				user-select: none;
+				margin-top: 0.25rem;
+			}
+
+			.raw-toggle { margin-left: auto; }
+			.raw-toggle > summary {
+				cursor: pointer;
+				user-select: none;
+				font-size: 0.75em;
+				color: var(--as-muted);
+				list-style: none;
+			}
+			.raw-toggle > summary::before { content: "▸ "; }
+			.raw-toggle[open] > summary::before { content: "▾ "; }
+			.raw-toggle > pre {
+				margin-top: 0.4rem;
+				font-size: 0.75em;
+				padding: 0.6rem;
+				overflow-x: auto;
+				border-radius: 4px;
+			}
+
+			.type-pill {
+				display: inline-block;
+				padding: 0.05em 0.5em;
+				border-radius: 4px;
+				font-size: 0.72em;
+				font-weight: 600;
+				font-family: var(--as-font-mono);
+				letter-spacing: 0.02em;
+			}
+			.type-string                  { background: #1a2f50; color: var(--as-info); }
+			.type-number, .type-integer   { background: #4a3000; color: var(--as-warn); }
+			.type-boolean                 { background: #1a4731; color: var(--as-ok); }
+			.type-object, .type-array     { background: #2a2a50; color: #a29bfe; }
+			.type-null, .type-any         { background: rgba(255,255,255,0.08); color: var(--as-muted); }
+
+			.required-dot {
+				display: inline-block;
+				width: 7px; height: 7px;
+				border-radius: 50%;
+				background: var(--as-bad);
+				flex-shrink: 0;
+			}
+			.required-dot.optional {
+				background: transparent;
+				border: 1px solid rgba(255,255,255,0.3);
+			}
+
+			.chip {
+				display: inline-block;
+				padding: 0.05em 0.45em;
+				border-radius: 4px;
+				background: rgba(255,255,255,0.08);
+				font-family: var(--as-font-mono);
+				font-size: 0.72em;
+				color: rgba(255,255,255,0.75);
+			}
+			.chip-enum { background: #4a1a3f; color: #ee83a1; }
+
 			/* ── aggregate metrics bar ──────────────────── */
 			.agg-bar {
 				display: flex;

@@ -1,0 +1,122 @@
+package ui
+
+import "fmt"
+
+// schemaSection renders the heading + Raw toggle + parsed field tree
+// for either an input or output schema on a tool card. Used in place
+// of the old paramsSection / "Full input schema" / "Output schema"
+// triplet inside toolCard.
+templ schemaSection(label, rawJSON string) {
+	<section class="schema-section">
+		<div class="schema-section-header">
+			<strong>{ label }</strong>
+			<details class="raw-toggle">
+				<summary>Raw</summary>
+				<pre><code>{ rawJSON }</code></pre>
+			</details>
+		</div>
+		@schemaSectionBody(rawJSON)
+	</section>
+}
+
+// schemaSectionBody handles the three outcomes from parsing: a tree
+// with fields, a tree with no fields, or a parse error. Split from
+// schemaSection so the if-init scope stays local.
+templ schemaSectionBody(rawJSON string) {
+	if root, err := ParseSchema(rawJSON); err == nil {
+		if root != nil && len(root.Children) > 0 {
+			@SchemaTree(root, 0)
+		} else {
+			<p class="dim">No fields.</p>
+		}
+	} else {
+		<p class="dim">(unable to parse schema — see Raw)</p>
+	}
+}
+
+// SchemaTree emits one schemaRow per child of root. The root itself
+// isn't rendered — it represents the (anonymous) outer schema.
+templ SchemaTree(root *SchemaNode, depth int) {
+	if root != nil {
+		for _, c := range root.Children {
+			@schemaRow(c, depth)
+		}
+	}
+}
+
+// schemaRow renders a single field row: required dot, name, type pill,
+// constraint chips, description, and recursively-expandable children.
+templ schemaRow(n *SchemaNode, depth int) {
+	<div class="schema-row" style={ indentStyle(depth) }>
+		<div class="schema-row-main">
+			if n.Required {
+				<span class="required-dot" title="required"></span>
+			} else {
+				<span class="required-dot optional" title="optional"></span>
+			}
+			<code>{ n.Name }</code>
+			<span class={ "type-pill " + typePillClass(n.Type) }>{ typePillText(n) }</span>
+			if n.Nullable {
+				<span class="chip">nullable</span>
+			}
+			for _, ev := range n.Enum {
+				<span class="chip chip-enum">{ ev }</span>
+			}
+			if n.Default != "" {
+				<span class="chip">{ "default: " + n.Default }</span>
+			}
+			if n.Format != "" {
+				<span class="chip">{ "format: " + n.Format }</span>
+			}
+			if n.Pattern != "" {
+				<span class="chip">{ "pattern: " + n.Pattern }</span>
+			}
+			if n.Minimum != nil {
+				<span class="chip">{ fmt.Sprintf("min: %g", *n.Minimum) }</span>
+			}
+			if n.Maximum != nil {
+				<span class="chip">{ fmt.Sprintf("max: %g", *n.Maximum) }</span>
+			}
+			if n.MinLength != nil {
+				<span class="chip">{ fmt.Sprintf("minLength: %d", *n.MinLength) }</span>
+			}
+			if n.MaxLength != nil {
+				<span class="chip">{ fmt.Sprintf("maxLength: %d", *n.MaxLength) }</span>
+			}
+		</div>
+		if n.Description != "" {
+			<p class="schema-row-desc">{ n.Description }</p>
+		}
+		@schemaRowChildren(n, depth)
+	</div>
+}
+
+// schemaRowChildren renders the collapsible children section for
+// objects (▸ N fields) and arrays whose items are objects with
+// properties (▸ fields, skipping the intermediate items hop so the
+// row reads as `array<object>`). Primitive arrays and leaf nodes
+// render no expansion at all.
+templ schemaRowChildren(n *SchemaNode, depth int) {
+	if n.Type == "object" && len(n.Children) > 0 {
+		<details class="schema-details">
+			<summary>{ fmt.Sprintf("▸ %d fields", len(n.Children)) }</summary>
+			<div class="schema-children">
+				for _, c := range n.Children {
+					@schemaRow(c, depth+1)
+				}
+			</div>
+		</details>
+	}
+	if n.Type == "array" {
+		if items := arrayItemsChild(n); items != nil && len(items.Children) > 0 {
+			<details class="schema-details">
+				<summary>▸ fields</summary>
+				<div class="schema-children">
+					for _, c := range items.Children {
+						@schemaRow(c, depth+1)
+					}
+				</div>
+			</details>
+		}
+	}
+}
