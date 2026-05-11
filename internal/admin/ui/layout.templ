@@ -9,8 +9,77 @@ templ sharedHead(title string) {
 		<meta name="viewport" content="width=device-width, initial-scale=1"/>
 		<title>{ title }</title>
 		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"/>
+		<link rel="icon" href='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><text y=%2213%22 font-size=%2213%22>⚙️</text></svg>'/>
 		<script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
 		<style>
+			/* ── design tokens ────────────────────────────── */
+			:root {
+				--as-font-mono: ui-monospace, "JetBrains Mono", "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
+				--as-ok:    #6fcf97;
+				--as-warn:  #f2c94c;
+				--as-bad:   #eb5757;
+				--as-info:  #5dade2;
+				--as-muted: rgba(255,255,255,0.55);
+				/* latency buckets, consumed by Stages 3+4 */
+				--as-lat-fast: #6fcf97;
+				--as-lat-ok:   #f2c94c;
+				--as-lat-slow: #f2994a;
+				--as-lat-bad:  #eb5757;
+			}
+			code, pre, .mono { font-family: var(--as-font-mono); }
+			.num { text-align: right; font-variant-numeric: tabular-nums; }
+			.refresh-dot {
+				display: inline-block;
+				width: 8px;
+				height: 8px;
+				border-radius: 50%;
+				background: var(--as-info);
+				animation: as-pulse 2s ease-in-out infinite;
+			}
+			@keyframes as-pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
+			.trusted-network-banner {
+				background: var(--as-warn);
+				color: #000;
+				padding: 0.4rem 1rem;
+				text-align: center;
+				font-size: 0.85em;
+				font-weight: 500;
+			}
+			.detail-page-header {
+				position: sticky;
+				top: 0;
+				z-index: 50;
+				background: var(--pico-background-color);
+			}
+			/* full-width main; trim padding at narrow widths so tables breathe */
+			.as-main { padding-left: 2rem; padding-right: 2rem; max-width: 1600px; margin-left: auto; margin-right: auto; }
+			@media (max-width: 900px) {
+				.as-main { padding-left: 0.75rem; padding-right: 0.75rem; }
+				.as-main article { padding-left: 0.75rem; padding-right: 0.75rem; }
+			}
+			/* always-visible horizontal scrollbar inside a table figure, so users
+			   know they can scroll on macOS (which auto-hides overlay scrollbars).
+			   -webkit-appearance:none is what forces a non-overlay scrollbar in Safari/Chrome. */
+			.table-scroll { overflow-x: auto; scrollbar-width: thin; }
+			.table-scroll::-webkit-scrollbar { -webkit-appearance: none; height: 8px; }
+			.table-scroll::-webkit-scrollbar-thumb {
+				background: rgba(255,255,255,0.25);
+				border-radius: 4px;
+			}
+			.table-scroll::-webkit-scrollbar-track {
+				background: rgba(255,255,255,0.05);
+			}
+			/* drop low-signal columns + tighten cell padding on narrow viewports so the table fits without scrolling */
+			@media (max-width: 900px) {
+				.backend-url { display: none; }
+				.col-last-connected { display: none; }
+				.as-main article table th,
+				.as-main article table td {
+					padding: 0.5rem 0.4rem;
+					font-size: 0.9em;
+				}
+			}
+
 			/* ── state badges ─────────────────────────────── */
 			.state-badge {
 				display: inline-block;
@@ -111,4 +180,11 @@ templ sharedHead(title string) {
 			}
 		</style>
 	</head>
+}
+
+// trustedNetworkBanner is shown on every page until Stage 9 ships auth.
+templ trustedNetworkBanner() {
+	<aside class="trusted-network-banner" role="alert">
+		⚠ This admin panel has no authentication — bind it to a trusted network only.
+	</aside>
 }

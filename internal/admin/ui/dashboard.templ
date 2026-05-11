@@ -12,6 +12,7 @@ templ Dashboard(backends []gateway.BackendDetail, agg gateway.Metrics) {
 	<html lang="en" data-theme="dark">
 		@sharedHead("Agentsmith · Admin")
 		<body>
+			@trustedNetworkBanner()
 			<header
 				class="container-fluid"
 				style="padding: 1.25rem 2rem; border-bottom: 1px solid var(--pico-muted-border-color);"
@@ -21,7 +22,7 @@ templ Dashboard(backends []gateway.BackendDetail, agg gateway.Metrics) {
 					<p style="margin: 0;">Admin · MCP Gateway</p>
 				</hgroup>
 			</header>
-			<main class="container" style="margin-top: 2rem;">
+			<main class="container-fluid as-main" style="margin-top: 2rem;">
 				@BackendsPanel(backends, agg)
 			</main>
 		</body>
@@ -34,27 +35,27 @@ templ BackendsPanel(backends []gateway.BackendDetail, agg gateway.Metrics) {
 	<article hx-get="/ui/backends" hx-trigger="every 5s" hx-swap="outerHTML">
 		<header class="panel-header">
 			<strong>Backends</strong>
-			<small class="dim">
+			<small class="dim" style="display: inline-flex; align-items: center; gap: 0.5rem;">
 				{ fmt.Sprintf("%d / %d connected", connectedCount(backends), len(backends)) }
-				&nbsp;·&nbsp; auto-refreshes every 5 s
+				<span class="refresh-dot" title="auto-refreshes every 5 s" aria-label="auto-refreshes every 5 s"></span>
 			</small>
 		</header>
 		@aggregateMetricsBar(agg)
 		if len(backends) == 0 {
 			<p><em>No backends configured.</em></p>
 		} else {
-			<figure style="margin: 0; overflow-x: auto;">
+			<figure class="table-scroll" style="margin: 0;">
 				<table>
 					<thead>
 						<tr>
 							<th>Backend</th>
 							<th>State</th>
-							<th>Tools</th>
-							<th>Calls</th>
-							<th>Errors</th>
-							<th>Avg ms</th>
-							<th>Reconnects</th>
-							<th>Last Connected</th>
+							<th class="num">Tools</th>
+							<th class="num">Calls</th>
+							<th class="num">Errors</th>
+							<th class="num">Avg ms</th>
+							<th class="num">Reconnects</th>
+							<th class="col-last-connected">Last Connected</th>
 							<th>Last Error</th>
 						</tr>
 					</thead>
@@ -88,15 +89,21 @@ templ backendRow(b gateway.BackendDetail) {
 				<strong>{ b.Name }</strong>
 			</a>
 			<br/>
-			<span class="dim">{ b.URL }</span>
+			<span class="dim backend-url">{ b.URL }</span>
 		</td>
 		<td>@stateBadge(b.State)</td>
-		<td>{ fmt.Sprintf("%d", b.ToolCount) }</td>
-		<td>{ fmt.Sprintf("%d", b.Metrics.TotalCalls) }</td>
-		<td style={ errorColor(b.Metrics.TotalErrors) }>{ fmt.Sprintf("%d", b.Metrics.TotalErrors) }</td>
-		<td>{ fmtAvgMs(b.Metrics.TotalMs, b.Metrics.TotalCalls) }</td>
-		<td>{ fmt.Sprintf("%d", max(0, b.ReconnectAttempts-1)) }</td>
-		<td>
+		<td class="num">{ fmt.Sprintf("%d", b.ToolCount) }</td>
+		<td class="num">{ fmt.Sprintf("%d", b.Metrics.TotalCalls) }</td>
+		<td class="num" style={ errorColor(b.Metrics.TotalErrors) }>{ fmt.Sprintf("%d", b.Metrics.TotalErrors) }</td>
+		<td class="num">
+			if b.Metrics.TotalCalls == 0 {
+				<span title="No successful calls yet">{ fmtAvgMs(b.Metrics.TotalMs, b.Metrics.TotalCalls) }</span>
+			} else {
+				{ fmtAvgMs(b.Metrics.TotalMs, b.Metrics.TotalCalls) }
+			}
+		</td>
+		<td class="num">{ fmt.Sprintf("%d", max(0, b.ReconnectAttempts-1)) }</td>
+		<td class="col-last-connected">
 			if b.LastConnectedAt != nil {
 				<time
 					class="dim"
@@ -110,6 +117,8 @@ templ backendRow(b gateway.BackendDetail) {
 		<td>
 			if b.LastError != "" {
 				<small style="color: #eb5757;">{ b.LastError }</small>
+			} else {
+				<span class="dim">—</span>
 			}
 		</td>
 	</tr>
