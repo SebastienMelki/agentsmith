@@ -148,7 +148,7 @@ func TestBearerToken(t *testing.T) {
 func TestMiddleware_UnprotectedAttachesDefaultUser(t *testing.T) {
 	store := NewMemoryStore()
 	var seen *User
-	h := Middleware(config.ModeUnprotected, store)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	h := Middleware(Options{Mode: config.ModeUnprotected, Users: store})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		seen = FromContext(r.Context())
 	}))
 
@@ -166,7 +166,7 @@ func TestMiddleware_UnprotectedAttachesDefaultUser(t *testing.T) {
 
 func TestMiddleware_ProtectedRequiresBearer(t *testing.T) {
 	store := NewMemoryStore()
-	h := Middleware(config.ModeProtected, store)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	h := Middleware(Options{Mode: config.ModeProtected, Users: store})(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("inner handler should not run on auth failure")
 	}))
 
@@ -184,7 +184,7 @@ func TestMiddleware_ProtectedRequiresBearer(t *testing.T) {
 
 func TestMiddleware_ProtectedRejectsBadKey(t *testing.T) {
 	store := NewMemoryStore()
-	h := Middleware(config.ModeProtected, store)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	h := Middleware(Options{Mode: config.ModeProtected, Users: store})(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("inner handler should not run on auth failure")
 	}))
 
@@ -206,7 +206,7 @@ func TestMiddleware_ProtectedAttachesResolvedUser(t *testing.T) {
 	}
 
 	var seen *User
-	h := Middleware(config.ModeProtected, store)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	h := Middleware(Options{Mode: config.ModeProtected, Users: store})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		seen = FromContext(r.Context())
 	}))
 
@@ -220,5 +220,53 @@ func TestMiddleware_ProtectedAttachesResolvedUser(t *testing.T) {
 	}
 	if seen == nil || seen.ID != user.ID {
 		t.Errorf("user = %+v, want %+v", seen, user)
+	}
+}
+
+// TestMiddleware_UnprotectedWithBearerRequiresToken confirms that wiring an
+// AS bearer lookup flips unprotected-mode from "anyone passes" to "AS token
+// required" so MCP clients receive the 401 + WWW-Authenticate challenge that
+// opens the browser.
+func TestMiddleware_UnprotectedWithBearerRequiresToken(t *testing.T) {
+	store := NewMemoryStore()
+	called := false
+	h := Middleware(Options{
+		Mode:  config.ModeUnprotected,
+		Users: store,
+		Bearer: func(token string) (string, bool) {
+			if token == "good-token" {
+				return DefaultUserID, true
+			}
+			return "", false
+		},
+		ResourceMetadata: func(_ *http.Request) string {
+			return "http://gateway/.well-known/oauth-protected-resource"
+		},
+	})(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { called = true }))
+
+	// No bearer → 401 with resource_metadata.
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("no-bearer status = %d, want 401", rr.Code)
+	}
+	if !strings.Contains(rr.Header().Get("WWW-Authenticate"), "resource_metadata=") {
+		t.Errorf("WWW-Authenticate missing resource_metadata: %q", rr.Header().Get("WWW-Authenticate"))
+	}
+	if called {
+		t.Error("inner handler ran despite missing bearer")
+	}
+
+	// Good bearer → passes through.
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
+	req2.Header.Set("Authorization", "Bearer good-token")
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusOK {
+		t.Errorf("good-bearer status = %d, want 200", rr2.Code)
+	}
+	if !called {
+		t.Error("inner handler not invoked for good bearer")
 	}
 }

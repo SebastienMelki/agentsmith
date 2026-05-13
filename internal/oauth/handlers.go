@@ -21,15 +21,21 @@ const ConnectPath = "/oauth/connect/"
 // The handler exchanges the code for tokens and persists them.
 const CallbackPath = "/oauth/callback/"
 
-// stateEntry is the per-flow data we stash between /oauth/connect and
-// /oauth/callback. State tokens are single-use; entries are deleted on
-// retrieval and prune themselves after a TTL.
+// stateEntry is the per-flow data we stash between /oauth/connect (or a
+// chained authz-session step) and /oauth/callback. State tokens are
+// single-use; entries are deleted on retrieval and prune themselves after a
+// TTL.
+//
+// AuthzSessionID, when set, marks this entry as part of a multi-backend
+// authorization driven by the gateway's own AS — the callback handler
+// advances the named session instead of rendering the legacy success page.
 type stateEntry struct {
-	UserID       string
-	Backend      string
-	PKCEVerifier string
-	RedirectURI  string
-	Expires      time.Time
+	UserID         string
+	Backend        string
+	PKCEVerifier   string
+	RedirectURI    string
+	AuthzSessionID string
+	Expires        time.Time
 }
 
 // stateStore is an in-memory single-use map keyed by state value.
@@ -92,6 +98,26 @@ type HandlerDeps struct {
 	// "connected, but tool list pending" page so the user knows to retry —
 	// tokens are kept either way.
 	OnSuccess func(ctx context.Context, backend, userID string) error
+
+	// AS plumbing — required only when the gateway is acting as its own
+	// authorization server (i.e. /oauth/register, /oauth/authorize, /oauth/token
+	// are mounted). Leaving these nil keeps the legacy ticket flow working
+	// and disables the AS endpoints.
+	Clients      *ClientStore
+	Codes        *CodeStore
+	IssuedTokens *TokenStore
+	Sessions     *SessionStore
+
+	// OAuthBackends is the list of configured OAuth backend names. Used to
+	// default the requested scope at /oauth/authorize when the client does
+	// not specify one — "all configured backends".
+	OAuthBackends []string
+
+	// IdentityResolver returns the user driving an /oauth/authorize request.
+	// In unprotected mode this is identity.DefaultUserID via a fixed
+	// resolver; protected-mode operators plug in a cookie/session lookup.
+	// When nil, /oauth/authorize 500s — wire one explicitly.
+	IdentityResolver func(*http.Request) (userID string, ok bool)
 }
 
 // Handler exposes the HTTP handlers for OAuth connect/callback.
@@ -101,7 +127,7 @@ type Handler struct {
 }
 
 // New returns a Handler bound to the given dependencies.
-func New(deps HandlerDeps) *Handler {
+func New(deps HandlerDeps) *Handler { //nolint:gocritic // construction-time copy, hugeParam non-issue
 	return &Handler{deps: deps, state: newStateStore()}
 }
 
@@ -130,14 +156,29 @@ func (h *Handler) HandleConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "ticket/backend mismatch", http.StatusBadRequest)
 		return
 	}
-	cfg, ok := h.deps.Registry.Get(backend)
-	if !ok {
-		http.Error(w, "unknown backend", http.StatusNotFound)
+	authURL, code, err := h.beginUpstreamFlow(r, backend, uid, "")
+	if err != nil {
+		http.Error(w, err.Error(), code)
 		return
 	}
+	// authURL is built from a backend config we control + a freshly-minted
+	// state — the only user-influenced input (the ticket) was verified above.
+	http.Redirect(w, r, authURL, http.StatusFound) //nolint:gosec // G710: redirect target is gateway-controlled, not user-supplied
+}
+
+// beginUpstreamFlow does the work that's common to ticket-initiated connects
+// and chained-AS advancement: resolve backend config, run DCR if needed,
+// generate PKCE + state, stash a stateEntry, and return the upstream
+// authorization URL. authzSessionID, when non-empty, threads through to the
+// stateEntry so HandleCallback can resume the named session after token
+// exchange instead of rendering the legacy success page.
+func (h *Handler) beginUpstreamFlow(r *http.Request, backend, userID, authzSessionID string) (authURL string, errStatus int, err error) {
+	cfg, ok := h.deps.Registry.Get(backend)
+	if !ok {
+		return "", http.StatusNotFound, fmt.Errorf("unknown backend %q", backend)
+	}
 	if err := cfg.Endpoints.Validate(); err != nil {
-		http.Error(w, "backend oauth misconfigured: "+err.Error(), http.StatusInternalServerError)
-		return
+		return "", http.StatusInternalServerError, fmt.Errorf("backend oauth misconfigured: %w", err)
 	}
 
 	redirect := h.callbackURL(r, backend)
@@ -146,42 +187,34 @@ func (h *Handler) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	// OAuth app, register one on the fly against the upstream's
 	// registration_endpoint. The resulting client_id (and optional secret) is
 	// stashed on the registry so future users of the same backend reuse it.
-	//
-	// Concurrent connects for the same backend coalesce on a per-backend
-	// lock so we don't double-register against the upstream and don't mutate
-	// the shared *BackendConfig from two goroutines at once.
 	if cfg.ClientID == "" {
 		if cfg.Endpoints.RegistrationURL == "" {
-			http.Error(w, "backend "+backend+" requires a clientId but upstream did not advertise a registration_endpoint — set auth.clientId in config", http.StatusInternalServerError)
-			return
+			return "", http.StatusInternalServerError, fmt.Errorf("backend %s requires a clientId but upstream did not advertise a registration_endpoint — set auth.clientId in config", backend)
 		}
 		updated, err := h.ensureRegisteredClient(r.Context(), backend, redirect)
 		if err != nil {
-			http.Error(w, "dynamic client registration failed: "+err.Error(), http.StatusBadGateway)
-			return
+			return "", http.StatusBadGateway, fmt.Errorf("dynamic client registration failed: %w", err)
 		}
 		cfg = updated
 	}
 
 	pkce, err := NewPKCE()
 	if err != nil {
-		http.Error(w, "pkce: "+err.Error(), http.StatusInternalServerError)
-		return
+		return "", http.StatusInternalServerError, fmt.Errorf("pkce: %w", err)
 	}
 	state, err := RandomState()
 	if err != nil {
-		http.Error(w, "state: "+err.Error(), http.StatusInternalServerError)
-		return
+		return "", http.StatusInternalServerError, fmt.Errorf("state: %w", err)
 	}
 	h.state.put(state, &stateEntry{
-		UserID:       uid,
-		Backend:      backend,
-		PKCEVerifier: pkce.Verifier,
-		RedirectURI:  redirect,
-		Expires:      time.Now().Add(10 * time.Minute),
+		UserID:         userID,
+		Backend:        backend,
+		PKCEVerifier:   pkce.Verifier,
+		RedirectURI:    redirect,
+		AuthzSessionID: authzSessionID,
+		Expires:        time.Now().Add(10 * time.Minute),
 	})
-	authURL := AuthCodeURL(cfg.Endpoints, cfg.ClientID, redirect, state, pkce, cfg.Scopes)
-	http.Redirect(w, r, authURL, http.StatusFound)
+	return AuthCodeURL(cfg.Endpoints, cfg.ClientID, redirect, state, pkce, cfg.Scopes), 0, nil
 }
 
 // HandleCallback receives the user back from the upstream authorization
@@ -247,6 +280,15 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// Chained-AS flow: if this callback was part of a multi-backend
+	// /oauth/authorize, hand off to the session advancer — it either
+	// redirects to the next backend or back to the MCP client with a code.
+	if entry.AuthzSessionID != "" {
+		h.advanceAuthzSession(w, r, entry.AuthzSessionID, backend)
+		return
+	}
+
 	writeCallbackSuccess(w, backend, entry.UserID)
 }
 
