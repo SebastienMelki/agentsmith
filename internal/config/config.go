@@ -53,9 +53,17 @@ type Target struct {
 	Auth    *TargetAuth       `yaml:"auth"`
 }
 
-// OAuthConfig holds gateway-wide OAuth settings. CallbackBaseURL is prepended
-// to every callback path emitted in authorization-URL builds and connect-link
-// errors, so OAuth providers can redirect back to a single registered URI.
+// OAuthConfig holds gateway-wide OAuth settings.
+//
+// CallbackBaseURL is an OPTIONAL override for the gateway's public URL used
+// to build the OAuth redirect_uri sent to upstream authorization servers.
+// When empty (the default), the gateway derives the base URL from the
+// incoming /oauth/connect request — honouring X-Forwarded-Proto and
+// X-Forwarded-Host so it works behind reverse proxies. Set this only when
+// auto-detection fails (e.g. proxy strips forwarded headers).
+//
+// TicketKey signs the short-lived ticket embedded in connect URLs so the
+// gateway can identify the user from a plain browser without re-auth.
 type OAuthConfig struct {
 	CallbackBaseURL string `yaml:"callbackBaseUrl"`
 	TicketKey       string `yaml:"ticketKey"`
@@ -113,9 +121,6 @@ func Load(path string) (*Config, error) {
 			return nil, fmt.Errorf("targets[%d] (%s): %w", i, t.Name, err)
 		}
 	}
-	if needsOAuthCallback(cfg.Targets) && cfg.OAuth.CallbackBaseURL == "" {
-		return nil, errors.New("oauth.callbackBaseUrl is required when any target uses auth.type: oauth")
-	}
 	return &cfg, nil
 }
 
@@ -139,17 +144,6 @@ func validateTargetAuth(t Target) error {
 		return nil
 	}
 	return nil
-}
-
-// needsOAuthCallback reports whether any target uses oauth, so we can require
-// the gateway-wide callback base URL only when it is actually used.
-func needsOAuthCallback(targets []Target) bool {
-	for _, t := range targets {
-		if t.Auth != nil && t.Auth.Type == AuthTypeOAuth {
-			return true
-		}
-	}
-	return false
 }
 
 var envVarRe = regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
