@@ -21,13 +21,28 @@ type BackendConfig struct {
 // Registry holds per-backend OAuth config and is used by both the Refresher
 // and the connect/callback handlers. It is safe for concurrent reads after
 // construction; mutate via Set.
+//
+// Pointers returned by Get are treated as immutable — callers that need to
+// change a field MUST construct a new BackendConfig and pass it to Set,
+// serializing concurrent updates via LockForUpdate. This avoids torn reads
+// in the Refresher while a connect handler runs Dynamic Client Registration.
 type Registry struct {
 	mu sync.RWMutex
 	m  map[string]*BackendConfig
+
+	// updateMu protects the perBackend map; the per-backend mutexes themselves
+	// are short-lived locks held across read-modify-write of one backend's cfg.
+	updateMu   sync.Mutex
+	perBackend map[string]*sync.Mutex
 }
 
 // NewRegistry returns an empty backend registry.
-func NewRegistry() *Registry { return &Registry{m: make(map[string]*BackendConfig)} }
+func NewRegistry() *Registry {
+	return &Registry{
+		m:          make(map[string]*BackendConfig),
+		perBackend: make(map[string]*sync.Mutex),
+	}
+}
 
 // Set registers or replaces a backend's OAuth config.
 func (r *Registry) Set(cfg *BackendConfig) {
@@ -42,6 +57,23 @@ func (r *Registry) Get(name string) (*BackendConfig, bool) {
 	defer r.mu.RUnlock()
 	c, ok := r.m[name]
 	return c, ok
+}
+
+// LockForUpdate acquires a per-backend lock so a caller can perform a
+// read-modify-write on the registered config without racing other Update
+// callers for the same backend. The returned func must be called (typically
+// via defer) to release the lock. Concurrent reads via Get continue to work;
+// the lock only serializes Update callers among themselves.
+func (r *Registry) LockForUpdate(name string) func() {
+	r.updateMu.Lock()
+	m, ok := r.perBackend[name]
+	if !ok {
+		m = &sync.Mutex{}
+		r.perBackend[name] = m
+	}
+	r.updateMu.Unlock()
+	m.Lock()
+	return m.Unlock
 }
 
 // Refresher implements secrets.Refresher against a Registry, posting to the

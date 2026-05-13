@@ -111,14 +111,17 @@ func run(cfgPath string) error {
 
 	// Wire the OAuth handler now that the registry is populated.
 	oauthHandler := oauth.New(oauth.HandlerDeps{
-		Tickets:         signer,
-		Tokens:          memTokens, // raw store: callback saves; refresher is read-side
-		Registry:        oauthReg,
-		CallbackBaseURL: cfg.OAuth.CallbackBaseURL,
-		OnSuccess: func(ctx context.Context, backend, userID string) {
+		Tickets:               signer,
+		Tokens:                memTokens, // raw store: callback saves; refresher is read-side
+		Registry:              oauthReg,
+		CallbackBaseURL:       cfg.OAuth.CallbackBaseURL,
+		TrustForwardedHeaders: cfg.OAuth.TrustForwardedHeaders,
+		OnSuccess: func(ctx context.Context, backend, userID string) error {
 			if err := gw.RegisterToolsForOAuthBackend(ctx, backend, userID); err != nil {
 				slog.Warn("post-OAuth tool registration failed", "backend", backend, "user_id", userID, "error", err.Error())
+				return err
 			}
+			return nil
 		},
 	})
 

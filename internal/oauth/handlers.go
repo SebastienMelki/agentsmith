@@ -79,11 +79,19 @@ type HandlerDeps struct {
 	Registry        *Registry
 	CallbackBaseURL string // optional override for redirect_uri base
 
-	// OnSuccess is invoked after a successful callback, before the success
-	// page is rendered. The gateway uses this to register the upstream's
-	// tools on the federated server using the just-completed user's session.
-	// Errors are logged but do not fail the callback — the user has tokens.
-	OnSuccess func(ctx context.Context, backend, userID string)
+	// TrustForwardedHeaders, if true, lets the auto-derived callback base URL
+	// honour X-Forwarded-Proto / X-Forwarded-Host. Default false: those
+	// headers are caller-controlled and should only be trusted when the admin
+	// port sits behind a proxy that strips/overwrites them. Has no effect
+	// when CallbackBaseURL is set.
+	TrustForwardedHeaders bool
+
+	// OnSuccess is invoked after a successful callback. Tokens are already
+	// persisted by the time it runs; the gateway uses it to register the
+	// upstream's tools on the federated server. Returning an error renders a
+	// "connected, but tool list pending" page so the user knows to retry —
+	// tokens are kept either way.
+	OnSuccess func(ctx context.Context, backend, userID string) error
 }
 
 // Handler exposes the HTTP handlers for OAuth connect/callback.
@@ -138,19 +146,21 @@ func (h *Handler) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	// OAuth app, register one on the fly against the upstream's
 	// registration_endpoint. The resulting client_id (and optional secret) is
 	// stashed on the registry so future users of the same backend reuse it.
+	//
+	// Concurrent connects for the same backend coalesce on a per-backend
+	// lock so we don't double-register against the upstream and don't mutate
+	// the shared *BackendConfig from two goroutines at once.
 	if cfg.ClientID == "" {
 		if cfg.Endpoints.RegistrationURL == "" {
 			http.Error(w, "backend "+backend+" requires a clientId but upstream did not advertise a registration_endpoint — set auth.clientId in config", http.StatusInternalServerError)
 			return
 		}
-		reg, err := RegisterClient(r.Context(), cfg.Endpoints.RegistrationURL, "agentsmith", redirect, cfg.Scopes)
+		updated, err := h.ensureRegisteredClient(r.Context(), backend, redirect)
 		if err != nil {
 			http.Error(w, "dynamic client registration failed: "+err.Error(), http.StatusBadGateway)
 			return
 		}
-		cfg.ClientID = reg.ClientID
-		cfg.ClientSecret = reg.ClientSecret
-		h.deps.Registry.Set(cfg)
+		cfg = updated
 	}
 
 	pkce, err := NewPKCE()
@@ -223,36 +233,75 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.deps.OnSuccess != nil {
-		h.deps.OnSuccess(r.Context(), backend, entry.UserID)
+		if err := h.deps.OnSuccess(r.Context(), backend, entry.UserID); err != nil {
+			slog.Warn("oauth: post-callback hook failed", "backend", backend, "user", entry.UserID, "error", err.Error())
+			writeCallbackPartial(w, backend, entry.UserID, err.Error())
+			return
+		}
 	}
 	writeCallbackSuccess(w, backend, entry.UserID)
 }
 
+// ensureRegisteredClient runs Dynamic Client Registration under a per-backend
+// lock so concurrent connects for the same backend don't double-register on
+// the upstream. The resulting credentials are written into a fresh
+// BackendConfig (copy-on-write) and swapped into the registry; the original
+// pointer is left untouched so the Refresher cannot observe a half-mutated
+// struct.
+func (h *Handler) ensureRegisteredClient(ctx context.Context, backend, redirect string) (*BackendConfig, error) {
+	unlock := h.deps.Registry.LockForUpdate(backend)
+	defer unlock()
+
+	// Re-read inside the lock — a sibling request may have just finished DCR.
+	cfg, ok := h.deps.Registry.Get(backend)
+	if !ok {
+		return nil, fmt.Errorf("backend %q vanished from registry mid-flow", backend)
+	}
+	if cfg.ClientID != "" {
+		return cfg, nil
+	}
+	reg, err := RegisterClient(ctx, cfg.Endpoints.RegistrationURL, "agentsmith", redirect, cfg.Scopes)
+	if err != nil {
+		return nil, err
+	}
+	updated := *cfg
+	updated.ClientID = reg.ClientID
+	updated.ClientSecret = reg.ClientSecret
+	h.deps.Registry.Set(&updated)
+	return &updated, nil
+}
+
 // callbackURL builds the absolute redirect_uri sent to the authorization
 // server. The explicit override wins; otherwise we derive scheme+host from
-// the incoming request, honouring X-Forwarded-Proto and X-Forwarded-Host so
-// the gateway works behind a reverse proxy.
+// the incoming request. X-Forwarded-* headers are only honoured when the
+// operator opted in via TrustForwardedHeaders, since those headers are
+// caller-controlled and could otherwise let an attacker reaching the admin
+// port redirect callbacks to an arbitrary host.
 func (h *Handler) callbackURL(r *http.Request, backend string) string {
 	base := h.deps.CallbackBaseURL
 	if base == "" {
-		base = deriveBaseURL(r)
+		base = deriveBaseURL(r, h.deps.TrustForwardedHeaders)
 	}
 	return strings.TrimRight(base, "/") + CallbackPath + backend
 }
 
-// deriveBaseURL returns scheme://host derived from a request, honouring
-// reverse-proxy headers.
-func deriveBaseURL(r *http.Request) string {
+// deriveBaseURL returns scheme://host derived from a request. When
+// trustForwarded is true, X-Forwarded-Proto and X-Forwarded-Host take
+// precedence — only safe when the listening port sits behind a proxy that
+// strips/overwrites those headers.
+func deriveBaseURL(r *http.Request, trustForwarded bool) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	if v := r.Header.Get("X-Forwarded-Proto"); v != "" {
-		scheme = strings.TrimSpace(strings.Split(v, ",")[0])
-	}
 	host := r.Host
-	if v := r.Header.Get("X-Forwarded-Host"); v != "" {
-		host = strings.TrimSpace(strings.Split(v, ",")[0])
+	if trustForwarded {
+		if v := r.Header.Get("X-Forwarded-Proto"); v != "" {
+			scheme = strings.TrimSpace(strings.Split(v, ",")[0])
+		}
+		if v := r.Header.Get("X-Forwarded-Host"); v != "" {
+			host = strings.TrimSpace(strings.Split(v, ",")[0])
+		}
 	}
 	return scheme + "://" + host
 }
@@ -290,6 +339,17 @@ func writeCallbackError(w http.ResponseWriter, msg string) {
 	_, _ = w.Write([]byte(page))
 }
 
+// writeCallbackPartial renders the page shown when OAuth succeeded (tokens
+// are persisted) but the post-callback hook failed — typically tool
+// registration on the federated server. The user can retry by visiting the
+// connect URL again; the gateway will skip the OAuth round-trip and rerun
+// the hook.
+func writeCallbackPartial(w http.ResponseWriter, backend, user, reason string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	page := partialPage(backend, user, reason)
+	_, _ = w.Write([]byte(page))
+}
+
 // successPage and errorPage assemble the post-OAuth HTML pages, escaping
 // every interpolated value via html.EscapeString. Pulled out so the writer
 // helpers above feed only static + escaped content to ResponseWriter (gosec
@@ -313,6 +373,23 @@ func errorPage(msg string) string {
 	b.WriteString(`</head><body><h2 class="err">✗ OAuth flow failed</h2><p>`)
 	b.WriteString(htmlEscape(msg))
 	b.WriteString(`</p><p>Close this tab and start the flow again from your MCP client.</p></body></html>`)
+	return b.String()
+}
+
+// partialPage is rendered when tokens were saved but the post-callback hook
+// (tool registration) failed. It explicitly tells the user that retrying the
+// connect link will rerun the hook without going through OAuth again.
+func partialPage(backend, user, reason string) string {
+	var b strings.Builder
+	b.WriteString(`<!doctype html><html><head><meta charset="utf-8"><title>Partial connect</title>`)
+	b.WriteString(`<style>body{font-family:system-ui,sans-serif;max-width:560px;margin:4rem auto;padding:0 1rem;color:#1f2937}.warn{color:#d97706}</style>`)
+	b.WriteString(`</head><body><h2 class="warn">Connected, but tools not yet available</h2><p>Your <strong>`)
+	b.WriteString(htmlEscape(backend))
+	b.WriteString(`</strong> account is linked (as <code>`)
+	b.WriteString(htmlEscape(user))
+	b.WriteString(`</code>) and the gateway has stored your tokens — that part succeeded. However, registering the backend's tool catalog on the federated server failed:</p><pre>`)
+	b.WriteString(htmlEscape(reason))
+	b.WriteString(`</pre><p>Re-open the connect link from your MCP client to retry; the gateway will reuse your stored tokens and skip the OAuth round-trip.</p></body></html>`)
 	return b.String()
 }
 

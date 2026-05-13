@@ -14,17 +14,26 @@ path: /mcp
 #     the admin UI at /users; each user gets their own OAuth identities.
 authMode: unprotected
 
-# oauth.callbackBaseUrl is OPTIONAL. When set, it overrides the redirect URI
-# the gateway sends to upstream authorization servers. By default the URI is
-# auto-derived from the incoming /oauth/connect request (honouring
-# X-Forwarded-Proto / X-Forwarded-Host) — only set this when your proxy
-# strips those headers or your gateway's public hostname differs from what
-# requests carry.
+# oauth.callbackBaseUrl is the gateway's public URL used to build the OAuth
+# redirect_uri sent to upstream authorization servers. Always set this in
+# production deployments behind a reverse proxy, NAT, or any setup where the
+# public hostname differs from what `r.Host` carries. When empty, the URL is
+# derived from the incoming request — with no proxy-header magic unless you
+# also set trustForwardedHeaders below.
+#
+# oauth.trustForwardedHeaders lets the auto-derived base URL honour
+# X-Forwarded-Proto / X-Forwarded-Host. Default is false because those
+# headers are caller-controlled and could let an attacker reaching the admin
+# port (which carries the OAuth routes) redirect callbacks to an arbitrary
+# host. Only enable when you know your proxy strips/overwrites them; prefer
+# setting callbackBaseUrl explicitly.
+#
 # oauth.ticketKey signs the short-lived ticket embedded in connect URLs.
 # Leaving it empty generates a fresh key per restart, which invalidates any
 # previously-issued connect URLs. Set a stable secret for production.
 oauth:
     callbackBaseUrl: ""
+    trustForwardedHeaders: false
     ticketKey: ${OAUTH_TICKET_KEY}
 
 targets:
