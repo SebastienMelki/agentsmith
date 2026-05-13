@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -42,6 +43,7 @@ var discoveryClient = &http.Client{Timeout: 10 * time.Second}
 // via config to fill in any gaps. Returns whatever was discovered plus a
 // non-nil error only on transport failure or malformed JSON.
 func Discover(ctx context.Context, mcpURL string) (*Endpoints, error) {
+	slog.Debug("running oauth discovery", "mcp_url", mcpURL)
 	mcpOrigin, err := originOf(mcpURL)
 	if err != nil {
 		return nil, fmt.Errorf("oauth: discover: parse mcp url: %w", err)
@@ -54,6 +56,12 @@ func Discover(ctx context.Context, mcpURL string) (*Endpoints, error) {
 	if err != nil {
 		return nil, err
 	}
+	slog.Info("oauth discovery succeeded",
+		"mcp_url", mcpURL,
+		"authorization_url", asm.AuthorizationURL,
+		"token_url", asm.TokenURL,
+		"registration_url", asm.RegistrationURL,
+	)
 	return asm, nil
 }
 

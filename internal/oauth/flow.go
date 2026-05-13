@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -32,6 +33,7 @@ type ClientRegistration struct {
 // registrationURL, asking for authorization-code + refresh-token grants with
 // the given redirect URI. Returns the issued client_id (and secret, if any).
 func RegisterClient(ctx context.Context, registrationURL, clientName, redirectURI string, scopes []string) (*ClientRegistration, error) {
+	slog.Info("running dynamic client registration", "client_name", clientName, "registration_url", registrationURL)
 	body := map[string]any{
 		"client_name":                clientName,
 		"redirect_uris":              []string{redirectURI},
@@ -68,7 +70,21 @@ func RegisterClient(ctx context.Context, registrationURL, clientName, redirectUR
 	if reg.ClientID == "" {
 		return nil, fmt.Errorf("oauth: dcr response missing client_id (body: %s)", snippet(respBody))
 	}
+	slog.Info("dynamic client registration succeeded",
+		"client_name", clientName,
+		"client_id_prefix", clientIDPrefix(reg.ClientID),
+		"has_secret", reg.ClientSecret != "",
+	)
 	return &reg, nil
+}
+
+// clientIDPrefix returns the first 8 chars of a client_id so we can identify
+// which client is in use across log lines without exposing the full value.
+func clientIDPrefix(id string) string {
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8] + "…"
 }
 
 // PKCE bundles a code verifier and its challenge. We keep the verifier on the

@@ -36,6 +36,24 @@ oauth:
     trustForwardedHeaders: false
     ticketKey: ${OAUTH_TICKET_KEY}
 
+# logging controls the root structured logger and HTTP access logging.
+#   level:  debug | info | warn | error  (default: info)
+#           Override at runtime via LOG_LEVEL env var.
+#   format: json | text                  (default: json, aggregator-ready)
+#           Override at runtime via LOG_FORMAT env var; local dev typically
+#           sets LOG_FORMAT=text in agentsmith.env for human-readable output.
+#   access.mcp / access.admin: (default both true)
+#           Emit one Info-level access record per HTTP request on each
+#           server. Disable selectively to silence high-volume traffic.
+#
+# Bodies are never logged. Request/response sizes and durations are.
+logging:
+    level: info
+    format: json
+    access:
+        mcp: true
+        admin: true
+
 targets:
     # Static-credential backend: same shape as before — a fixed Authorization
     # header that every caller shares.

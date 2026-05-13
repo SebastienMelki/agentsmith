@@ -20,11 +20,16 @@ import (
 	"github.com/sebastienmelki/agentsmith/internal/config"
 	"github.com/sebastienmelki/agentsmith/internal/gateway"
 	"github.com/sebastienmelki/agentsmith/internal/identity"
+	"github.com/sebastienmelki/agentsmith/internal/logging"
 	"github.com/sebastienmelki/agentsmith/internal/oauth"
 	"github.com/sebastienmelki/agentsmith/internal/secrets"
 )
 
 func main() {
+	// Bootstrap logger: text/info on stderr. This catches anything that
+	// happens before config is loaded (env loading, flag parsing,
+	// config.Load errors). Once config.Load succeeds we re-init the default
+	// logger from cfg.Logging + LOG_LEVEL/LOG_FORMAT overrides.
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})))
@@ -39,7 +44,7 @@ func main() {
 	flag.Parse()
 
 	if err := run(*cfgPath); err != nil {
-		fmt.Fprintf(os.Stderr, "agentsmith: %v\n", err)
+		slog.Error("startup failed", "error", err)
 		os.Exit(1)
 	}
 }
@@ -49,6 +54,26 @@ func run(cfgPath string) error {
 	if err != nil {
 		return err
 	}
+
+	// Re-init the root logger from config (with env overrides). After this
+	// point all slog.Default() callers — across every package — honour the
+	// configured level and format.
+	logCfg := config.LoggingFromEnv(cfg.Logging)
+	logger, err := logging.New(logging.Config{Level: logCfg.Level, Format: logCfg.Format})
+	if err != nil {
+		return err
+	}
+	slog.SetDefault(logger)
+
+	slog.Info("starting agentsmith",
+		"auth_mode", string(cfg.AuthMode),
+		"listen_addr", cfg.ListenAddr,
+		"admin_addr", cfg.AdminAddr,
+		"path", cfg.Path,
+		"targets", len(cfg.Targets),
+		"log_level", logCfg.Level,
+		"log_format", logCfg.Format,
+	)
 
 	if cfg.AuthMode == config.ModeUnprotected {
 		slog.Warn("MCP endpoint is unauthenticated — any client reaching it can use connected OAuth identities. Set authMode: protected in config.yaml for per-user isolation.", "auth_mode", string(cfg.AuthMode))
@@ -126,11 +151,18 @@ func run(cfgPath string) error {
 
 	// MCP server — serves the federated tool catalog, wrapped with the
 	// identity middleware so tool handlers can attribute calls to a user.
+	// Middleware order (outermost-in): AccessLog → RequestID → identity.
+	// AccessLog runs first so it can read the request_id and user_id those
+	// inner layers attach to the context.
 	mcpMux := http.NewServeMux()
 	mcpMux.Handle(cfg.Path, mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return gw.Server()
 	}, nil))
 	mcpHandler := identity.Middleware(cfg.AuthMode, idStore)(mcpMux)
+	mcpHandler = logging.RequestIDMiddleware(mcpHandler)
+	if cfg.Logging.Access.MCP != nil && *cfg.Logging.Access.MCP {
+		mcpHandler = logging.AccessLog("mcp", mcpHandler)
+	}
 	mcpSrv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           mcpHandler,
@@ -138,13 +170,18 @@ func run(cfgPath string) error {
 	}
 
 	// Admin server — operational status, user management, OAuth flow.
+	adminHandler := admin.New(gw, admin.Options{
+		Users:        idStore,
+		OAuthHandler: oauthHandler,
+		AuthMode:     cfg.AuthMode,
+	}).Handler()
+	adminHandler = logging.RequestIDMiddleware(adminHandler)
+	if cfg.Logging.Access.Admin != nil && *cfg.Logging.Access.Admin {
+		adminHandler = logging.AccessLog("admin", adminHandler)
+	}
 	adminSrv := &http.Server{
-		Addr: cfg.AdminAddr,
-		Handler: admin.New(gw, admin.Options{
-			Users:        idStore,
-			OAuthHandler: oauthHandler,
-			AuthMode:     cfg.AuthMode,
-		}).Handler(),
+		Addr:              cfg.AdminAddr,
+		Handler:           adminHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

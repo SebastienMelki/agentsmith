@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -181,8 +182,10 @@ func (s *RefreshingTokenStore) Get(ctx context.Context, userID, backend string) 
 		return tok, nil
 	}
 
+	slog.Debug("refreshing token", "backend", backend, "user_id", userID)
 	fresh, err := s.refresher.Refresh(ctx, backend, tok.RefreshToken)
 	if err != nil {
+		slog.Warn("token refresh failed", "backend", backend, "user_id", userID, "error", err)
 		return nil, fmt.Errorf("secrets: refresh %s for %s: %w", backend, userID, err)
 	}
 	// Carry forward the refresh token if the upstream did not return a new
@@ -193,6 +196,11 @@ func (s *RefreshingTokenStore) Get(ctx context.Context, userID, backend string) 
 	if err := s.inner.Save(userID, backend, fresh); err != nil {
 		return nil, fmt.Errorf("secrets: persist refreshed tokens: %w", err)
 	}
+	var expiresInS int64
+	if !fresh.ExpiresAt.IsZero() {
+		expiresInS = int64(time.Until(fresh.ExpiresAt).Seconds())
+	}
+	slog.Info("token refreshed", "backend", backend, "user_id", userID, "expires_in_s", expiresInS)
 	return fresh, nil
 }
 

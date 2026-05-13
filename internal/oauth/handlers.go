@@ -196,6 +196,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	if upstreamErr := r.URL.Query().Get("error"); upstreamErr != "" {
 		desc := r.URL.Query().Get("error_description")
+		slog.Warn("oauth callback returned error", "backend", backend, "error", upstreamErr, "error_description", desc)
 		writeCallbackError(w, fmt.Sprintf("%s: %s", upstreamErr, desc))
 		return
 	}
@@ -220,14 +221,21 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Info("oauth callback received", "backend", backend, "user_id", entry.UserID)
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	tokens, err := ExchangeCode(ctx, cfg.Endpoints, cfg.ClientID, cfg.ClientSecret, code, entry.PKCEVerifier, entry.RedirectURI)
 	if err != nil {
-		slog.Error("oauth: code exchange failed", "backend", backend, "user", entry.UserID, "error", err)
+		slog.Error("oauth code exchange failed", "backend", backend, "user_id", entry.UserID, "error", err)
 		writeCallbackError(w, "token exchange failed: "+err.Error())
 		return
 	}
+	slog.Info("oauth code exchange succeeded",
+		"backend", backend,
+		"user_id", entry.UserID,
+		"scopes", tokens.Scopes,
+		"has_refresh_token", tokens.RefreshToken != "",
+	)
 	if err := h.deps.Tokens.Save(entry.UserID, backend, tokens); err != nil {
 		writeCallbackError(w, "persist tokens: "+err.Error())
 		return
