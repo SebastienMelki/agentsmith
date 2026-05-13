@@ -20,7 +20,7 @@ templ: generate
 ## build: compile the binary into bin/ (uses committed *_templ.go files)
 build:
 	@mkdir -p bin
-	$(GO) build -o $(BINARY) .
+	@$(GO) build -o $(BINARY) .
 
 ## run: build and start agentsmith (requires config.yaml — copy from examples/; auto-loads agentsmith.env if present)
 run: build

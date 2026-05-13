@@ -82,14 +82,38 @@ type OAuthConfig struct {
 	TicketKey             string `yaml:"ticketKey"`
 }
 
+// AccessLogConfig toggles HTTP access logging per server. Pointer fields let
+// the YAML loader distinguish "unset" from an explicit false so the defaults
+// can be applied without clobbering an operator's deliberate "off".
+type AccessLogConfig struct {
+	MCP   *bool `yaml:"mcp"`
+	Admin *bool `yaml:"admin"`
+}
+
+// LoggingConfig controls the root slog handler.
+//   - Level: debug | info | warn | error  (default: info)
+//   - Format: json | text                  (default: json for aggregator-ready
+//     deployments; local dev typically overrides via LOG_FORMAT=text in
+//     agentsmith.env)
+//   - Access: per-server access-log toggles, both default true.
+//
+// LOG_LEVEL and LOG_FORMAT environment variables override the YAML values at
+// startup, so operators can bump verbosity without editing config.
+type LoggingConfig struct {
+	Level  string          `yaml:"level"`
+	Format string          `yaml:"format"`
+	Access AccessLogConfig `yaml:"access"`
+}
+
 // Config is the top-level agentsmith configuration.
 type Config struct {
-	ListenAddr string      `yaml:"listenAddr"`
-	AdminAddr  string      `yaml:"adminAddr"`
-	Path       string      `yaml:"path"`
-	AuthMode   AuthMode    `yaml:"authMode"`
-	OAuth      OAuthConfig `yaml:"oauth"`
-	Targets    []Target    `yaml:"targets"`
+	ListenAddr string        `yaml:"listenAddr"`
+	AdminAddr  string        `yaml:"adminAddr"`
+	Path       string        `yaml:"path"`
+	AuthMode   AuthMode      `yaml:"authMode"`
+	OAuth      OAuthConfig   `yaml:"oauth"`
+	Logging    LoggingConfig `yaml:"logging"`
+	Targets    []Target      `yaml:"targets"`
 }
 
 // Load reads the YAML file at path, expands ${VAR} environment references,
@@ -123,6 +147,9 @@ func Load(path string) (*Config, error) {
 	if cfg.AuthMode != ModeUnprotected && cfg.AuthMode != ModeProtected {
 		return nil, fmt.Errorf("authMode: %q is not a valid value (expected %q or %q)", cfg.AuthMode, ModeUnprotected, ModeProtected)
 	}
+	if err := applyLoggingDefaults(&cfg.Logging); err != nil {
+		return nil, err
+	}
 	if len(cfg.Targets) == 0 {
 		return nil, errors.New("at least one target is required")
 	}
@@ -135,6 +162,48 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	return &cfg, nil
+}
+
+// applyLoggingDefaults fills in unset logging fields and validates the
+// remaining values. It is called from Load after YAML unmarshalling.
+func applyLoggingDefaults(l *LoggingConfig) error {
+	if l.Level == "" {
+		l.Level = "info"
+	}
+	switch l.Level {
+	case "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("logging.level: %q is not a valid value (expected debug, info, warn, or error)", l.Level)
+	}
+	if l.Format == "" {
+		l.Format = "json"
+	}
+	if l.Format != "json" && l.Format != "text" {
+		return fmt.Errorf("logging.format: %q is not a valid value (expected json or text)", l.Format)
+	}
+	if l.Access.MCP == nil {
+		t := true
+		l.Access.MCP = &t
+	}
+	if l.Access.Admin == nil {
+		t := true
+		l.Access.Admin = &t
+	}
+	return nil
+}
+
+// LoggingFromEnv returns a copy of l with Level and Format overridden by the
+// LOG_LEVEL and LOG_FORMAT environment variables when set. Empty env values
+// are ignored. Validation happens on the next caller (logging.New) so an
+// invalid override surfaces a clear error rather than being silently dropped.
+func LoggingFromEnv(l LoggingConfig) LoggingConfig {
+	if v, ok := os.LookupEnv("LOG_LEVEL"); ok && v != "" {
+		l.Level = v
+	}
+	if v, ok := os.LookupEnv("LOG_FORMAT"); ok && v != "" {
+		l.Format = v
+	}
+	return l
 }
 
 // validateTargetAuth ensures the auth block is internally consistent. The

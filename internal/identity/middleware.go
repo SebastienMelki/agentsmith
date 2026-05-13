@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sebastienmelki/agentsmith/internal/config"
+	"github.com/sebastienmelki/agentsmith/internal/logging"
 )
 
 // Middleware returns an HTTP middleware that resolves the caller's identity
@@ -22,31 +23,51 @@ import (
 func Middleware(mode config.AuthMode, store Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			user, ok := resolveUser(mode, store, r)
+			user, reason, ok := resolveUser(mode, store, r)
 			if !ok {
+				logging.FromContext(r.Context()).Warn("auth rejected",
+					"reason", reason,
+					"remote_addr", r.RemoteAddr,
+					"path", r.URL.Path,
+				)
 				writeUnauthorized(w, r)
 				return
 			}
-			next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), user)))
+			ctx := WithUser(r.Context(), user)
+			// Stash the user_id on context (for the access log middleware
+			// to pick up) and on the ctx-scoped logger (for downstream
+			// handlers and any per-request slog calls). The in-place
+			// mutation ensures the AccessLog middleware wrapping us sees
+			// the user_id after next.ServeHTTP returns.
+			ctx = logging.WithUserID(ctx, user.ID)
+			ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("user_id", user.ID))
+			*r = *r.WithContext(ctx)
+			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-// resolveUser implements the per-mode auth logic. Returning (nil, false)
-// triggers the 401 branch in Middleware.
-func resolveUser(mode config.AuthMode, store Store, r *http.Request) (*User, bool) {
+// resolveUser implements the per-mode auth logic. The reason string is
+// "missing_bearer" / "invalid_bearer" / "unknown_key" on failure and empty on
+// success — used by Middleware to attribute 401s without re-parsing the
+// header.
+func resolveUser(mode config.AuthMode, store Store, r *http.Request) (*User, string, bool) {
 	if mode != config.ModeProtected {
-		return defaultUser(), true
+		return defaultUser(), "", true
 	}
-	key := bearerToken(r.Header.Get("Authorization"))
+	hdr := r.Header.Get("Authorization")
+	if hdr == "" {
+		return nil, "missing_bearer", false
+	}
+	key := bearerToken(hdr)
 	if key == "" {
-		return nil, false
+		return nil, "invalid_bearer", false
 	}
 	u, err := store.Lookup(key)
 	if err != nil {
-		return nil, false
+		return nil, "unknown_key", false
 	}
-	return u, true
+	return u, "", true
 }
 
 // defaultUser is the synthetic identity used in ModeUnprotected. A fresh

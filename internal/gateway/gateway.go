@@ -480,9 +480,11 @@ func (b *backend) reapIdleSessions(now time.Time) {
 		us.mu.Lock()
 		stale := us.sess != nil && !us.lastUsed.IsZero() && us.lastUsed.Before(threshold)
 		var toClose *mcp.ClientSession
+		var idleMinutes int64
 		if stale {
 			toClose = us.sess
 			us.sess = nil
+			idleMinutes = int64(now.Sub(us.lastUsed) / time.Minute)
 		}
 		us.mu.Unlock()
 		if !stale {
@@ -492,6 +494,7 @@ func (b *backend) reapIdleSessions(now time.Time) {
 		b.userSessionsMu.Lock()
 		delete(b.userSessions, uid)
 		b.userSessionsMu.Unlock()
+		slog.Debug("reaped idle user session", "backend", b.name, "user_id", uid, "idle_minutes", idleMinutes)
 	}
 }
 
@@ -515,7 +518,7 @@ func (g *Gateway) connectLoop(ctx context.Context, b *backend) {
 		attempt := b.reconnectAttempts
 		b.mu.Unlock()
 
-		slog.Info("dialing backend", "name", b.name, "attempt", attempt)
+		slog.Debug("dialing backend", "name", b.name, "attempt", attempt)
 
 		sess, err := g.dialStatic(ctx, b)
 		if err != nil {
@@ -623,9 +626,11 @@ func (g *Gateway) dialUserSession(ctx context.Context, b *backend, userID string
 
 	if us.sess != nil {
 		us.lastUsed = time.Now()
+		slog.Debug("using cached user session", "backend", b.name, "user_id", userID)
 		return us.sess, nil
 	}
 
+	slog.Debug("dialing user session", "backend", b.name, "user_id", userID)
 	tokens, err := g.deps.Tokens.Get(ctx, userID, b.name)
 	if err != nil {
 		return nil, err
@@ -655,6 +660,7 @@ func (g *Gateway) dialUserSession(ctx context.Context, b *backend, userID string
 	}
 	us.sess = sess
 	us.lastUsed = time.Now()
+	slog.Info("user session opened", "backend", b.name, "user_id", userID)
 	return sess, nil
 }
 
@@ -672,6 +678,7 @@ func (b *backend) invalidateUserSession(userID string) {
 		_ = us.sess.Close()
 	}
 	delete(b.userSessions, userID)
+	slog.Info("invalidated user session — upstream returned 401", "backend", b.name, "user_id", userID)
 }
 
 // registerTools lists the backend's tools and registers each one on the
@@ -690,6 +697,7 @@ func (g *Gateway) registerTools(ctx context.Context, b *backend, sess *mcp.Clien
 		namespaced.Name = b.name + namespaceSep + t.Name
 		originalName := t.Name
 		g.server.AddTool(&namespaced, g.makeHandler(b, originalName))
+		slog.Debug("registered tool", "backend", b.name, "tool", originalName)
 	}
 
 	toolsCopy := make([]*mcp.Tool, len(result.Tools))
@@ -732,15 +740,70 @@ func (g *Gateway) makeHandler(b *backend, originalName string) mcp.ToolHandler {
 			Arguments: args,
 			Meta:      req.Params.Meta,
 		})
+		duration := time.Since(start)
 		// If the upstream returned a transport-level 401, drop the cached
 		// session so the next call re-dials with a fresh token. We do not
 		// auto-retry — the next user attempt will resolve cleanly.
 		if callErr != nil && b.authType == config.AuthTypeOAuth && isAuthError(callErr) {
 			b.invalidateUserSession(userID)
 		}
+		logToolResult(b.name, originalName, userID, duration, args, result, callErr)
 		b.recordCall(originalName, userID, start, args, result, callErr)
 		return result, callErr
 	}
+}
+
+// logToolResult emits the canonical outcome line operators read to triage
+// upstream issues. Bodies are NEVER logged here — only sizes — so secrets
+// flowing through tool args/results stay out of the structured stream.
+// (The admin UI's in-memory call log retains bodies for human inspection.)
+func logToolResult(backendName, tool, userID string, duration time.Duration, args any, result *mcp.CallToolResult, callErr error) {
+	success := callErr == nil && (result == nil || !result.IsError)
+	attrs := []any{
+		"backend", backendName,
+		"tool", tool,
+		"user_id", userID,
+		"duration_ms", duration.Milliseconds(),
+		"success", success,
+		"bytes_in", jsonSize(args),
+		"bytes_out", jsonSize(result),
+	}
+	if callErr != nil {
+		attrs = append(attrs, "error", truncate(callErr.Error(), 256))
+		slog.Warn("tool result", attrs...)
+		return
+	}
+	if !success {
+		// Tool-level error embedded in the result content.
+		attrs = append(attrs, "error", "tool returned IsError")
+		slog.Warn("tool result", attrs...)
+		return
+	}
+	slog.Info("tool result", attrs...)
+}
+
+// jsonSize returns the byte length of v marshalled as JSON, or 0 when v is
+// nil or fails to marshal. Cheap enough to call per request; sized rather
+// than logged so we never leak body content.
+func jsonSize(v any) int {
+	if v == nil {
+		return 0
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return 0
+	}
+	return len(data)
+}
+
+// truncate returns s shortened to maxLen bytes with an ellipsis when clipped.
+// Used on error messages where the full upstream stack trace is noise in
+// the structured log.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "…"
 }
 
 // resolveSession returns the live session for this call, or a structured
