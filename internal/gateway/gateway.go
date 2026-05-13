@@ -18,6 +18,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sebastienmelki/agentsmith/internal/config"
+	"github.com/sebastienmelki/agentsmith/internal/identity"
+	"github.com/sebastienmelki/agentsmith/internal/oauth"
+	"github.com/sebastienmelki/agentsmith/internal/secrets"
 )
 
 const (
@@ -26,6 +29,7 @@ const (
 	listTimeout    = 15 * time.Second
 	initialBackoff = 2 * time.Second
 	maxBackoff     = 2 * time.Minute
+	connectTicketTTL = 10 * time.Minute
 )
 
 // BackendState describes the current connectivity state of a backend.
@@ -33,9 +37,10 @@ type BackendState string
 
 // Possible values of BackendState.
 const (
-	StateConnecting BackendState = "connecting"
-	StateConnected  BackendState = "connected"
-	StateError      BackendState = "error"
+	StateConnecting    BackendState = "connecting"
+	StateConnected     BackendState = "connected"
+	StateError         BackendState = "error"
+	StateAwaitingAuth  BackendState = "awaiting_auth"
 )
 
 // BackendStatus is a point-in-time snapshot of a backend, safe to JSON-encode
@@ -44,6 +49,7 @@ type BackendStatus struct {
 	Name              string       `json:"name"`
 	URL               string       `json:"url"`
 	State             BackendState `json:"state"`
+	AuthType          string       `json:"authType"` // "static" or "oauth"
 	LastError         string       `json:"lastError,omitempty"`
 	LastConnectedAt   *time.Time   `json:"lastConnectedAt,omitempty"`
 	ReconnectAttempts int          `json:"reconnectAttempts"`
@@ -77,6 +83,7 @@ type ToolInfo struct {
 // CallEntry records a single tool invocation for the call log.
 type CallEntry struct {
 	ToolName   string    `json:"toolName"`
+	UserID     string    `json:"userId,omitempty"`
 	CalledAt   time.Time `json:"calledAt"`
 	DurationMs int64     `json:"durationMs"`
 	Success    bool      `json:"success"`
@@ -105,24 +112,46 @@ type BackendDetail struct {
 
 const logCap = 500 // ring-buffer capacity for call log
 
-// backend holds all mutable state for one upstream MCP target.
+// userSession is a per-(user, backend) MCP client session for OAuth backends.
+// Each one carries an Authorization: Bearer <access_token> header injected at
+// dial time, so the upstream sees each user as a distinct caller.
+type userSession struct {
+	mu       sync.Mutex
+	sess     *mcp.ClientSession
+	lastUsed time.Time
+}
+
+// backend holds all mutable state for one upstream MCP target. Two shapes
+// share this struct: static backends use the single sharedSession field and
+// run a reconnect loop, while oauth backends lazily dial one userSession per
+// caller and skip the reconnect loop entirely.
 type backend struct {
 	// immutable after creation
-	name    string
-	url     string
-	headers map[string]string
-	// client is reused across reconnects; a fresh transport is created per dial.
+	name     string
+	url      string
+	headers  map[string]string // static-auth headers, empty for oauth backends
+	authType string            // config.AuthTypeStatic or config.AuthTypeOAuth
+	oauthCfg *oauth.BackendConfig
+
+	// client is reused across reconnects for static backends. For oauth
+	// backends each user dial constructs its own client.
 	client *mcp.Client
 
 	mu                sync.RWMutex
 	state             BackendState
-	session           *mcp.ClientSession
+	sharedSession     *mcp.ClientSession // static backends only
 	lastErr           error
 	lastConnectedAt   *time.Time
 	reconnectAttempts int
 	toolCount         int
 	toolsRegistered   bool        // true after the first successful ListTools+AddTool
 	tools             []*mcp.Tool // stored on first successful registration
+
+	// Per-user sessions for oauth backends. Keyed by user ID. Lazy-created on
+	// the first tool call from that user; persists across calls until the
+	// session dies, at which point we re-dial on the next call.
+	userSessionsMu sync.Mutex
+	userSessions   map[string]*userSession
 
 	// metrics and call log — guarded by mu
 	metrics  Metrics
@@ -135,17 +164,6 @@ type backend struct {
 	logSubs []chan CallEntry
 }
 
-// getSession returns the live session (and true) under an RLock. Tool dispatch
-// calls this so reconnects are transparent to the MCP server layer.
-func (b *backend) getSession() (*mcp.ClientSession, bool) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if b.state != StateConnected || b.session == nil {
-		return nil, false
-	}
-	return b.session, true
-}
-
 // snapshot returns a safe copy of the backend's current status.
 func (b *backend) snapshot() BackendStatus {
 	b.mu.RLock()
@@ -154,6 +172,7 @@ func (b *backend) snapshot() BackendStatus {
 		Name:              b.name,
 		URL:               b.url,
 		State:             b.state,
+		AuthType:          b.authType,
 		ReconnectAttempts: b.reconnectAttempts,
 		ToolCount:         b.toolCount,
 	}
@@ -167,6 +186,17 @@ func (b *backend) snapshot() BackendStatus {
 	return s
 }
 
+// Deps is the gateway's external collaborators: token store for OAuth
+// backends, signer for connect tickets, registry of OAuth client config, and
+// the public URL used to build connect-link error messages. OAuth fields may
+// be nil/empty when no backend uses OAuth.
+type Deps struct {
+	Tokens          *secrets.RefreshingTokenStore
+	Tickets         *oauth.TicketSigner
+	OAuthRegistry   *oauth.Registry
+	CallbackBaseURL string // used in tool-error connect URLs
+}
+
 // Gateway federates one or more MCP backends behind a single Streamable HTTP
 // endpoint, namespacing each backend's tools with "<target>__<tool>". Each
 // backend runs its own reconnect loop so the gateway stays available even when
@@ -174,33 +204,100 @@ func (b *backend) snapshot() BackendStatus {
 type Gateway struct {
 	server   *mcp.Server
 	backends []*backend
+	deps     Deps
 }
 
 // New creates the federated MCP server and fires a background connectLoop for
 // each configured target. It returns immediately — no backend needs to be
-// reachable at startup.
-func New(ctx context.Context, cfg *config.Config) (*Gateway, error) {
+// reachable at startup. For OAuth backends, the connect loop is skipped: tool
+// registration happens lazily after the first user OAuths successfully.
+func New(ctx context.Context, cfg *config.Config, deps Deps) (*Gateway, error) {
 	g := &Gateway{
 		server: mcp.NewServer(&mcp.Implementation{Name: "agentsmith", Version: "v0.0.1"}, nil),
+		deps:   deps,
 	}
 	for _, t := range cfg.Targets {
-		// KeepAlive proactively detects silent TCP failures instead of waiting
-		// for the next tool call to hit the 60 s HTTP timeout.
-		client := mcp.NewClient(
+		b := newBackend(t)
+		g.backends = append(g.backends, b)
+		if b.authType == config.AuthTypeOAuth {
+			// OAuth backends start in awaiting_auth until the first user OAuths.
+			b.mu.Lock()
+			b.state = StateAwaitingAuth
+			b.mu.Unlock()
+		} else {
+			go g.connectLoop(ctx, b)
+		}
+	}
+	return g, nil
+}
+
+// newBackend builds a backend from a config target. The shared mcp.Client is
+// only used by static backends — oauth backends get a fresh client per user
+// dial because each carries different auth headers.
+func newBackend(t config.Target) *backend {
+	authType := config.AuthTypeStatic
+	if t.Auth != nil && t.Auth.Type != "" {
+		authType = t.Auth.Type
+	}
+	b := &backend{
+		name:         t.Name,
+		url:          t.URL,
+		headers:      t.Headers,
+		authType:     authType,
+		state:        StateConnecting,
+		userSessions: make(map[string]*userSession),
+	}
+	if authType == config.AuthTypeStatic {
+		b.client = mcp.NewClient(
 			&mcp.Implementation{Name: "agentsmith", Version: "v0.0.1"},
 			&mcp.ClientOptions{KeepAlive: 5 * time.Second},
 		)
-		b := &backend{
-			name:    t.Name,
-			url:     t.URL,
-			headers: t.Headers,
-			client:  client,
-			state:   StateConnecting,
-		}
-		g.backends = append(g.backends, b)
-		go g.connectLoop(ctx, b)
 	}
-	return g, nil
+	return b
+}
+
+// SetOAuthConfig wires the resolved OAuth client config into the backend.
+// Called from main once discovery (if any) has run.
+func (g *Gateway) SetOAuthConfig(name string, cfg *oauth.BackendConfig) {
+	for _, b := range g.backends {
+		if b.name == name {
+			b.mu.Lock()
+			b.oauthCfg = cfg
+			b.mu.Unlock()
+			return
+		}
+	}
+}
+
+// RegisterToolsForOAuthBackend dials with the given user's tokens, lists the
+// upstream's tools, and registers them on the federated server. Called once
+// per OAuth backend, after the first user successfully completes OAuth.
+// Idempotent — second calls are no-ops.
+func (g *Gateway) RegisterToolsForOAuthBackend(ctx context.Context, backendName, userID string) error {
+	b := g.backendByName(backendName)
+	if b == nil {
+		return fmt.Errorf("unknown backend %q", backendName)
+	}
+	b.mu.RLock()
+	already := b.toolsRegistered
+	b.mu.RUnlock()
+	if already {
+		return nil
+	}
+	sess, err := g.dialUserSession(ctx, b, userID)
+	if err != nil {
+		return err
+	}
+	if err := g.registerTools(ctx, b, sess); err != nil {
+		return err
+	}
+	now := time.Now()
+	b.mu.Lock()
+	b.state = StateConnected
+	b.lastConnectedAt = &now
+	b.lastErr = nil
+	b.mu.Unlock()
+	return nil
 }
 
 // Server returns the federated MCP server. It is ready to handle HTTP traffic
@@ -238,15 +335,22 @@ func (g *Gateway) BackendDetails() []BackendDetail {
 func (g *Gateway) Close() {
 	for _, b := range g.backends {
 		b.mu.RLock()
-		sess := b.session
+		sess := b.sharedSession
 		b.mu.RUnlock()
 		if sess != nil {
 			_ = sess.Close()
 		}
+		b.userSessionsMu.Lock()
+		for _, us := range b.userSessions {
+			if us.sess != nil {
+				_ = us.sess.Close()
+			}
+		}
+		b.userSessionsMu.Unlock()
 	}
 }
 
-// connectLoop runs in a dedicated goroutine for each backend. It dials,
+// connectLoop runs in a dedicated goroutine for each static backend. It dials,
 // registers tools on the first successful connection, then blocks on
 // sess.Wait(). When the session ends it reconnects with exponential backoff.
 //
@@ -268,7 +372,7 @@ func (g *Gateway) connectLoop(ctx context.Context, b *backend) {
 
 		slog.Info("dialing backend", "name", b.name, "attempt", attempt)
 
-		sess, err := g.dial(ctx, b)
+		sess, err := g.dialStatic(ctx, b)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -293,7 +397,7 @@ func (g *Gateway) connectLoop(ctx context.Context, b *backend) {
 		now := time.Now()
 		b.mu.Lock()
 		b.state = StateConnected
-		b.session = sess
+		b.sharedSession = sess
 		b.lastErr = nil
 		b.lastConnectedAt = &now
 		b.mu.Unlock()
@@ -325,7 +429,7 @@ func (g *Gateway) connectLoop(ctx context.Context, b *backend) {
 
 		b.mu.Lock()
 		b.state = StateError
-		b.session = nil
+		b.sharedSession = nil
 		b.lastErr = errors.New("session closed")
 		b.mu.Unlock()
 
@@ -338,13 +442,13 @@ func (g *Gateway) connectLoop(ctx context.Context, b *backend) {
 	}
 }
 
-// dial builds a fresh single-use transport and performs the MCP handshake.
-func (g *Gateway) dial(ctx context.Context, b *backend) (*mcp.ClientSession, error) {
+// dialStatic builds a fresh single-use transport using the backend's static
+// auth headers and performs the MCP handshake.
+func (g *Gateway) dialStatic(ctx context.Context, b *backend) (*mcp.ClientSession, error) {
 	httpClient := &http.Client{
 		Timeout:   60 * time.Second,
 		Transport: &headerInjector{base: http.DefaultTransport, headers: b.headers},
 	}
-	// StreamableClientTransport is single-use per the SDK contract.
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   b.url,
 		HTTPClient: httpClient,
@@ -352,6 +456,77 @@ func (g *Gateway) dial(ctx context.Context, b *backend) (*mcp.ClientSession, err
 	connectCtx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 	return b.client.Connect(connectCtx, transport, nil)
+}
+
+// dialUserSession returns the live MCP client session for (b, userID),
+// creating it lazily if missing. Pulls the user's OAuth access token from the
+// token store at dial time and injects it as Authorization: Bearer.
+//
+// secrets.ErrNotFound is returned when the user has not yet completed OAuth
+// for this backend — callers translate that into a connect-URL tool error.
+func (g *Gateway) dialUserSession(ctx context.Context, b *backend, userID string) (*mcp.ClientSession, error) {
+	b.userSessionsMu.Lock()
+	us, ok := b.userSessions[userID]
+	if !ok {
+		us = &userSession{}
+		b.userSessions[userID] = us
+	}
+	b.userSessionsMu.Unlock()
+
+	us.mu.Lock()
+	defer us.mu.Unlock()
+
+	if us.sess != nil {
+		us.lastUsed = time.Now()
+		return us.sess, nil
+	}
+
+	tokens, err := g.deps.Tokens.Get(ctx, userID, b.name)
+	if err != nil {
+		return nil, err
+	}
+	scheme := tokens.TokenType
+	if scheme == "" {
+		scheme = "Bearer"
+	}
+	hdrs := map[string]string{"Authorization": scheme + " " + tokens.AccessToken}
+	httpClient := &http.Client{
+		Timeout:   60 * time.Second,
+		Transport: &headerInjector{base: http.DefaultTransport, headers: hdrs},
+	}
+	transport := &mcp.StreamableClientTransport{
+		Endpoint:   b.url,
+		HTTPClient: httpClient,
+	}
+	client := mcp.NewClient(
+		&mcp.Implementation{Name: "agentsmith", Version: "v0.0.1"},
+		&mcp.ClientOptions{KeepAlive: 5 * time.Second},
+	)
+	connectCtx, cancel := context.WithTimeout(ctx, connectTimeout)
+	defer cancel()
+	sess, err := client.Connect(connectCtx, transport, nil)
+	if err != nil {
+		return nil, fmt.Errorf("dial %s for user %s: %w", b.name, userID, err)
+	}
+	us.sess = sess
+	us.lastUsed = time.Now()
+	return sess, nil
+}
+
+// invalidateUserSession drops the cached session for (b, userID) so the next
+// call will dial fresh. Used when an upstream returns 401 — likely the access
+// token was revoked or rotated out of band.
+func (b *backend) invalidateUserSession(userID string) {
+	b.userSessionsMu.Lock()
+	defer b.userSessionsMu.Unlock()
+	us, ok := b.userSessions[userID]
+	if !ok {
+		return
+	}
+	if us.sess != nil {
+		_ = us.sess.Close()
+	}
+	delete(b.userSessions, userID)
 }
 
 // registerTools lists the backend's tools and registers each one on the
@@ -385,39 +560,128 @@ func (g *Gateway) registerTools(ctx context.Context, b *backend, sess *mcp.Clien
 	return nil
 }
 
-// makeHandler returns a ToolHandler that resolves the live session at call
-// time, making reconnects invisible to the MCP server layer.
+// makeHandler returns a ToolHandler that resolves the right session at call
+// time — the shared one for static backends, the per-user one for oauth
+// backends. Reconnects and token refreshes are transparent to the MCP server
+// layer.
 func (g *Gateway) makeHandler(b *backend, originalName string) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		sess, ok := b.getSession()
-		if !ok {
-			return nil, fmt.Errorf("backend %q is currently unavailable", b.name)
+		userID := userIDFromContext(ctx)
+		sess, errResult, err := g.resolveSession(ctx, b, userID)
+		if err != nil {
+			return nil, err
 		}
-		slog.Info("tool call", "backend", b.name, "tool", originalName)
+		if errResult != nil {
+			b.recordCall(originalName, userID, time.Now(), nil, errResult, nil)
+			return errResult, nil
+		}
+		slog.Info("tool call", "backend", b.name, "tool", originalName, "user_id", userID)
 		var args any
 		if len(req.Params.Arguments) > 0 {
 			args = req.Params.Arguments
 		}
 
 		start := time.Now()
-		result, err := sess.CallTool(ctx, &mcp.CallToolParams{
+		result, callErr := sess.CallTool(ctx, &mcp.CallToolParams{
 			Name:      originalName,
 			Arguments: args,
 			Meta:      req.Params.Meta,
 		})
-		b.recordCall(originalName, start, args, result, err)
-		return result, err
+		// If the upstream returned a transport-level 401, drop the cached
+		// session so the next call re-dials with a fresh token. We do not
+		// auto-retry — the next user attempt will resolve cleanly.
+		if callErr != nil && b.authType == config.AuthTypeOAuth && isAuthError(callErr) {
+			b.invalidateUserSession(userID)
+		}
+		b.recordCall(originalName, userID, start, args, result, callErr)
+		return result, callErr
 	}
 }
 
+// resolveSession returns the live session for this call, or a structured
+// tool-error result describing how to authorize when tokens are missing.
+// A non-nil err is a transport/infrastructure problem the SDK should surface
+// as a protocol error; a non-nil errResult is a user-facing tool error.
+func (g *Gateway) resolveSession(ctx context.Context, b *backend, userID string) (sess *mcp.ClientSession, errResult *mcp.CallToolResult, err error) {
+	if b.authType == config.AuthTypeStatic {
+		b.mu.RLock()
+		s := b.sharedSession
+		state := b.state
+		b.mu.RUnlock()
+		if state != StateConnected || s == nil {
+			return nil, nil, fmt.Errorf("backend %q is currently unavailable", b.name)
+		}
+		return s, nil, nil
+	}
+	if userID == "" {
+		return nil, errorResult("agentsmith: tool call has no associated user — auth middleware misconfigured"), nil
+	}
+	sess, err = g.dialUserSession(ctx, b, userID)
+	if errors.Is(err, secrets.ErrNotFound) {
+		return nil, g.connectPromptResult(b.name, userID), nil
+	}
+	if err != nil {
+		return nil, errorResult(fmt.Sprintf("agentsmith: dial %s: %v", b.name, err)), nil
+	}
+	return sess, nil, nil
+}
+
+// connectPromptResult builds the structured tool-error result that points the
+// user at the URL they need to visit to complete OAuth.
+func (g *Gateway) connectPromptResult(backendName, userID string) *mcp.CallToolResult {
+	if g.deps.Tickets == nil {
+		return errorResult(fmt.Sprintf("Connect %s required, but ticket signer not configured", backendName))
+	}
+	ticket, err := g.deps.Tickets.Sign(userID, backendName, connectTicketTTL)
+	if err != nil {
+		return errorResult(fmt.Sprintf("sign connect ticket: %v", err))
+	}
+	base := g.deps.CallbackBaseURL
+	if base == "" {
+		base = "http://localhost:3002" // best-effort; operator should set CallbackBaseURL
+	}
+	url := oauth.BuildConnectURL(base, backendName, ticket)
+	return errorResult(fmt.Sprintf("Connect your %s account first: %s", backendName, url))
+}
+
+// errorResult wraps a plaintext message as a structured tool-error result
+// per the MCP spec — IsError=true so the LLM sees and surfaces it, content
+// is a single TextContent block.
+func errorResult(text string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		IsError: true,
+		Content: []mcp.Content{&mcp.TextContent{Text: text}},
+	}
+}
+
+// isAuthError is a heuristic test for "upstream rejected our credentials".
+// The MCP SDK does not expose HTTP status codes through CallTool errors, so
+// we string-match on the error message — good enough to trigger a re-dial
+// without false-positive harm (worst case is an extra dial on the next call).
+func isAuthError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "401") || strings.Contains(strings.ToLower(msg), "unauthorized")
+}
+
+// userIDFromContext returns the user ID attached by the identity middleware,
+// or "" if none.
+func userIDFromContext(ctx context.Context) string {
+	u := identity.FromContext(ctx)
+	if u == nil {
+		return ""
+	}
+	return u.ID
+}
+
 // recordCall appends a CallEntry to the ring buffer and updates metrics.
-func (b *backend) recordCall(tool string, start time.Time, args any, result *mcp.CallToolResult, callErr error) {
+func (b *backend) recordCall(tool, userID string, start time.Time, args any, result *mcp.CallToolResult, callErr error) {
 	ms := time.Since(start).Milliseconds()
 	e := CallEntry{
 		ToolName:   tool,
+		UserID:     userID,
 		CalledAt:   start,
 		DurationMs: ms,
-		Success:    callErr == nil,
+		Success:    callErr == nil && (result == nil || !result.IsError),
 		Request:    prettyJSON(args),
 		Response:   prettyJSON(result),
 	}
@@ -435,7 +699,7 @@ func (b *backend) recordCall(tool string, start time.Time, args any, result *mcp
 	// metrics
 	b.metrics.TotalCalls++
 	b.metrics.TotalMs += ms
-	if callErr != nil {
+	if !e.Success {
 		b.metrics.TotalErrors++
 	}
 	if b.metrics.PerTool == nil {
@@ -509,12 +773,20 @@ func (b *backend) subscribeLogs() (ch chan CallEntry, unsub func()) {
 // BackendByName returns a fully hydrated BackendDetail for the named backend,
 // or false if no backend with that name exists.
 func (g *Gateway) BackendByName(name string) (BackendDetail, bool) {
+	b := g.backendByName(name)
+	if b == nil {
+		return BackendDetail{}, false
+	}
+	return b.detailSnapshot(), true
+}
+
+func (g *Gateway) backendByName(name string) *backend {
 	for _, b := range g.backends {
 		if b.name == name {
-			return b.detailSnapshot(), true
+			return b
 		}
 	}
-	return BackendDetail{}, false
+	return nil
 }
 
 // detailSnapshot builds a BackendDetail from the backend's current state.

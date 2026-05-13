@@ -48,7 +48,8 @@ func run(cfgPath string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	gw, err := gateway.New(ctx, cfg)
+	// TODO(oauth-mcp): construct identity/secrets/oauth deps before passing in.
+	gw, err := gateway.New(ctx, cfg, gateway.Deps{})
 	if err != nil {
 		return err
 	}
