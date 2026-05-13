@@ -66,10 +66,11 @@ func run(cfgPath string) error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	// Admin server — operational status and future control-plane endpoints.
+	// Admin server — operational status and control-plane endpoints.
+	// TODO(oauth-mcp): wire identity + oauth handler into Options.
 	adminSrv := &http.Server{
 		Addr:              cfg.AdminAddr,
-		Handler:           admin.New(gw).Handler(),
+		Handler:           admin.New(gw, admin.Options{AuthMode: cfg.AuthMode}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

@@ -561,3 +561,14 @@ templ trustedNetworkBanner() {
 		⚠ This admin panel has no authentication — bind it to a trusted network only.
 	</aside>
 }
+
+// unprotectedModeBanner replaces trustedNetworkBanner on every admin page
+// when the gateway's MCP endpoint is also unauthenticated. Clearer call to
+// action: explains the risk and points operators to the protected-mode
+// upgrade path.
+templ unprotectedModeBanner() {
+	<aside class="trusted-network-banner" role="alert" style="background: #5a3500; color: #ffd089; border-left: 4px solid #f59e0b;">
+		⚠ Gateway is running in <strong>unprotected mode</strong> — any client reaching <code>/mcp</code> can use any connected OAuth identity.
+		Set <code>authMode: protected</code> in <code>config.yaml</code> and issue per-user API keys to enforce isolation.
+	</aside>
+}

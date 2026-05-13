@@ -83,4 +83,37 @@ func trustedNetworkBanner() templ.Component {
 	})
 }
 
+// unprotectedModeBanner replaces trustedNetworkBanner on every admin page
+// when the gateway's MCP endpoint is also unauthenticated. Clearer call to
+// action: explains the risk and points operators to the protected-mode
+// upgrade path.
+func unprotectedModeBanner() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var4 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var4 == nil {
+			templ_7745c5c3_Var4 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<aside class=\"trusted-network-banner\" role=\"alert\" style=\"background: #5a3500; color: #ffd089; border-left: 4px solid #f59e0b;\">⚠ Gateway is running in <strong>unprotected mode</strong> — any client reaching <code>/mcp</code> can use any connected OAuth identity. Set <code>authMode: protected</code> in <code>config.yaml</code> and issue per-user API keys to enforce isolation.</aside>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
 var _ = templruntime.GeneratedTemplate

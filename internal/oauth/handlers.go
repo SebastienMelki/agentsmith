@@ -78,6 +78,12 @@ type HandlerDeps struct {
 	Tokens          secrets.TokenStore
 	Registry        *Registry
 	CallbackBaseURL string // optional override for redirect_uri base
+
+	// OnSuccess is invoked after a successful callback, before the success
+	// page is rendered. The gateway uses this to register the upstream's
+	// tools on the federated server using the just-completed user's session.
+	// Errors are logged but do not fail the callback — the user has tokens.
+	OnSuccess func(ctx context.Context, backend, userID string)
 }
 
 // Handler exposes the HTTP handlers for OAuth connect/callback.
@@ -195,6 +201,9 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if err := h.deps.Tokens.Save(entry.UserID, backend, tokens); err != nil {
 		writeCallbackError(w, "persist tokens: "+err.Error())
 		return
+	}
+	if h.deps.OnSuccess != nil {
+		h.deps.OnSuccess(r.Context(), backend, entry.UserID)
 	}
 	writeCallbackSuccess(w, backend, entry.UserID)
 }

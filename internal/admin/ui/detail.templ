@@ -11,12 +11,16 @@ import (
 // The static shell (head, top nav, backend identity) never refreshes;
 // BackendDetailContent is the live region that polls every 5 s.
 // The call log dialog lives outside the polled region so it survives swaps.
-templ BackendDetailPage(detail gateway.BackendDetail) {
+templ BackendDetailPage(detail gateway.BackendDetail, unprotected bool) {
 	<!DOCTYPE html>
 	<html lang="en" data-theme="dark">
 		@sharedHead(detail.Name + " · Agentsmith Admin")
 		<body>
-			@trustedNetworkBanner()
+			if unprotected {
+				@unprotectedModeBanner()
+			} else {
+				@trustedNetworkBanner()
+			}
 			<header
 				class="container-fluid detail-page-header"
 				style="padding: 1rem 2rem; border-bottom: 1px solid var(--pico-muted-border-color); display: flex; align-items: center; gap: 1.5rem;"

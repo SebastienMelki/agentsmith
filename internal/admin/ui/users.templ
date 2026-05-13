@@ -1,0 +1,138 @@
+package ui
+
+import "github.com/sebastienmelki/agentsmith/internal/identity"
+
+// UsersPage renders the list-of-users admin page. In unprotected mode the
+// list is empty (or shows a single synthetic "default" user) and the create
+// form is hidden — there is no meaningful user to add.
+templ UsersPage(users []identity.User, protected, unprotected bool) {
+	<!DOCTYPE html>
+	<html lang="en" data-theme="dark">
+		@sharedHead("Users · Agentsmith Admin")
+		<body>
+			if unprotected {
+				@unprotectedModeBanner()
+			} else {
+				@trustedNetworkBanner()
+			}
+			<header
+				class="container-fluid"
+				style="padding: 1rem 2rem; border-bottom: 1px solid var(--pico-muted-border-color); display: flex; align-items: center; gap: 1.5rem;"
+			>
+				<a href="/" class="secondary" style="white-space: nowrap;">← Dashboard</a>
+				<hgroup style="margin: 0;">
+					<h2 style="margin: 0;">Users</h2>
+					<p class="dim" style="margin: 0;">API keys for the MCP endpoint</p>
+				</hgroup>
+			</header>
+			<main class="container-fluid as-main" style="margin-top: 2rem;">
+				if !protected {
+					<article>
+						<p>
+							The gateway is currently in <strong>unprotected mode</strong>. All
+							OAuth identities are pinned to a single synthetic user
+							(<code>{ identity.DefaultUserID }</code>). To create per-employee
+							API keys, set <code>authMode: protected</code> in
+							<code>config.yaml</code> and restart.
+						</p>
+					</article>
+				} else {
+					<article>
+						<header><strong>Create user</strong></header>
+						<form method="POST" action="/users">
+							<input
+								type="email"
+								name="email"
+								placeholder="alice@acme.com"
+								required
+								style="max-width: 24rem;"
+							/>
+							<button type="submit">Create</button>
+						</form>
+						<small class="dim">
+							The API key is shown <strong>once</strong> on the next page —
+							copy it before navigating away.
+						</small>
+					</article>
+				}
+				<article>
+					<header><strong>Existing users</strong></header>
+					if len(users) == 0 {
+						<p><em>No users configured.</em></p>
+					} else {
+						<table>
+							<thead>
+								<tr>
+									<th>Email</th>
+									<th>Created</th>
+									<th style="width: 1px;"></th>
+								</tr>
+							</thead>
+							<tbody>
+								for _, u := range users {
+									<tr>
+										<td><strong>{ u.Email }</strong></td>
+										<td class="dim">{ u.CreatedAt.UTC().Format("2006-01-02 15:04 UTC") }</td>
+										<td>
+											if protected {
+												<form
+													method="POST"
+													action={ templ.SafeURL("/users/" + u.ID) }
+													onsubmit="this.action = this.action; this.method = 'POST'; return confirm('Revoke API key for ' + this.dataset.email + '?');"
+													data-email={ u.Email }
+												>
+													<input type="hidden" name="_method" value="DELETE"/>
+													<button class="contrast outline" type="submit" style="padding: 0.2rem 0.6rem;">Revoke</button>
+												</form>
+											}
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					}
+				</article>
+			</main>
+		</body>
+	</html>
+}
+
+// UserCreatedPage renders the one-time API key reveal after POST /users.
+// The user copies it; we never show it again.
+templ UserCreatedPage(user *identity.User, apiKey string, unprotected bool) {
+	<!DOCTYPE html>
+	<html lang="en" data-theme="dark">
+		@sharedHead("User created · Agentsmith Admin")
+		<body>
+			if unprotected {
+				@unprotectedModeBanner()
+			} else {
+				@trustedNetworkBanner()
+			}
+			<header
+				class="container-fluid"
+				style="padding: 1rem 2rem; border-bottom: 1px solid var(--pico-muted-border-color); display: flex; align-items: center; gap: 1.5rem;"
+			>
+				<a href="/users" class="secondary" style="white-space: nowrap;">← Users</a>
+				<hgroup style="margin: 0;">
+					<h2 style="margin: 0;">User created</h2>
+					<p class="dim" style="margin: 0;">{ user.Email }</p>
+				</hgroup>
+			</header>
+			<main class="container-fluid as-main" style="margin-top: 2rem;">
+				<article>
+					<header><strong>API key</strong></header>
+					<p>
+						This key is shown only once. Copy it now — it cannot be
+						recovered. Re-issue if lost.
+					</p>
+					<pre style="user-select: all; padding: 1rem; background: var(--pico-code-background-color);"><code>{ apiKey }</code></pre>
+					<p>
+						The user pastes this into their MCP client as
+						<code>Authorization: Bearer { apiKey }</code>.
+					</p>
+				</article>
+			</main>
+		</body>
+	</html>
+}
