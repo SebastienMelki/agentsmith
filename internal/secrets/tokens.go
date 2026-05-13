@@ -128,9 +128,18 @@ type RefreshingTokenStore struct {
 	refresher Refresher
 
 	// One refresh per (user, backend) is in flight at a time so concurrent
-	// callers do not stampede the upstream token endpoint.
+	// callers do not stampede the upstream token endpoint. Entries are
+	// reference-counted and deleted when the last waiter releases them so
+	// the map does not grow unbounded over the gateway's lifetime.
 	mu       sync.Mutex
-	inflight map[string]*sync.Mutex
+	inflight map[string]*refreshLock
+}
+
+// refreshLock is a per-(user, backend) mutex with a waiter count so we can
+// drop the entry when the last caller releases it.
+type refreshLock struct {
+	mu      sync.Mutex
+	waiters int
 }
 
 // NewRefreshingTokenStore wraps inner with auto-refresh logic backed by r.
@@ -139,7 +148,7 @@ func NewRefreshingTokenStore(inner TokenStore, r Refresher) *RefreshingTokenStor
 	return &RefreshingTokenStore{
 		inner:     inner,
 		refresher: r,
-		inflight:  make(map[string]*sync.Mutex),
+		inflight:  make(map[string]*refreshLock),
 	}
 }
 
@@ -156,7 +165,9 @@ func (s *RefreshingTokenStore) Get(ctx context.Context, userID, backend string) 
 		return tok, nil
 	}
 
-	lock := s.lockFor(userID, backend)
+	k := tokenKey(userID, backend)
+	lock := s.acquireRefreshLock(k)
+	defer s.releaseRefreshLock(k)
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -195,17 +206,34 @@ func (s *RefreshingTokenStore) Delete(userID, backend string) error {
 	return s.inner.Delete(userID, backend)
 }
 
-// lockFor returns the per-(user, backend) refresh mutex, creating it on first
-// use. Held only for the duration of a refresh; never held alongside the
+// acquireRefreshLock returns the per-(user, backend) refresh mutex, creating
+// it on first use, and bumps its waiter count. Callers MUST pair this with a
+// release call so the entry can be reclaimed when idle. The returned mutex
+// is held only for the duration of a refresh; never held alongside the
 // underlying store's lock.
-func (s *RefreshingTokenStore) lockFor(userID, backend string) *sync.Mutex {
-	k := tokenKey(userID, backend)
+func (s *RefreshingTokenStore) acquireRefreshLock(k string) *sync.Mutex {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m, ok := s.inflight[k]
+	rl, ok := s.inflight[k]
 	if !ok {
-		m = &sync.Mutex{}
-		s.inflight[k] = m
+		rl = &refreshLock{}
+		s.inflight[k] = rl
 	}
-	return m
+	rl.waiters++
+	return &rl.mu
+}
+
+// releaseRefreshLock decrements the waiter count for k and deletes the entry
+// when no goroutines are waiting on or holding it. Pair with acquireRefreshLock.
+func (s *RefreshingTokenStore) releaseRefreshLock(k string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rl, ok := s.inflight[k]
+	if !ok {
+		return
+	}
+	rl.waiters--
+	if rl.waiters <= 0 {
+		delete(s.inflight, k)
+	}
 }

@@ -30,6 +30,15 @@ const (
 	initialBackoff = 2 * time.Second
 	maxBackoff     = 2 * time.Minute
 	connectTicketTTL = 10 * time.Minute
+
+	// userSessionIdleThreshold is how long a per-user MCP session can sit
+	// unused before the reaper closes it. The next tool call from that user
+	// re-dials transparently using the current OAuth tokens.
+	userSessionIdleThreshold = 30 * time.Minute
+	// userSessionReapInterval is how often the reaper sweeps for idle
+	// sessions. Cheap enough to run frequently; not so often that it adds
+	// noticeable lock pressure.
+	userSessionReapInterval = 5 * time.Minute
 )
 
 // BackendState describes the current connectivity state of a backend.
@@ -162,6 +171,10 @@ type backend struct {
 	// logSubs receives a copy of every new CallEntry for SSE subscribers.
 	// Channels are added/removed under mu.
 	logSubs []chan CallEntry
+	// closed flips to true exactly once, in Close(), under mu. After it is
+	// set we stop notifying subscribers and refuse new subscriptions so the
+	// channels we already closed cannot receive further sends.
+	closed bool
 }
 
 // snapshot returns a safe copy of the backend's current status.
@@ -205,6 +218,13 @@ type Gateway struct {
 	server   *mcp.Server
 	backends []*backend
 	deps     Deps
+
+	// internalCtx and cancel scope the gateway's background goroutines (the
+	// per-user session reaper for OAuth backends). Close() cancels this and
+	// waits on wg so reapers exit before the caller returns.
+	internalCtx context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
 }
 
 // New creates the federated MCP server and fires a background connectLoop for
@@ -212,14 +232,19 @@ type Gateway struct {
 // reachable at startup. For OAuth backends, the connect loop is skipped: tool
 // registration happens lazily after the first user OAuths successfully.
 func New(ctx context.Context, cfg *config.Config, deps Deps) (*Gateway, error) {
+	internalCtx, cancel := context.WithCancel(ctx)
 	g := &Gateway{
-		server: mcp.NewServer(&mcp.Implementation{Name: "agentsmith", Version: "v0.0.1"}, nil),
-		deps:   deps,
+		server:      mcp.NewServer(&mcp.Implementation{Name: "agentsmith", Version: "v0.0.1"}, nil),
+		deps:        deps,
+		internalCtx: internalCtx,
+		cancel:      cancel,
 	}
+	hasOAuth := false
 	for _, t := range cfg.Targets {
 		b := newBackend(t)
 		g.backends = append(g.backends, b)
 		if b.authType == config.AuthTypeOAuth {
+			hasOAuth = true
 			// OAuth backends start in awaiting_auth until the first user OAuths.
 			// We register a "<backend>__connect" placeholder tool so the
 			// federated server advertises something for this backend — MCP
@@ -232,6 +257,10 @@ func New(ctx context.Context, cfg *config.Config, deps Deps) (*Gateway, error) {
 		} else {
 			go g.connectLoop(ctx, b)
 		}
+	}
+	if hasOAuth {
+		g.wg.Add(1)
+		go g.reapUserSessions(internalCtx)
 	}
 	return g, nil
 }
@@ -363,10 +392,27 @@ func (g *Gateway) BackendDetails() []BackendDetail {
 	return out
 }
 
-// Close terminates all live backend sessions. Errors are swallowed because
-// this is only called during shutdown.
+// Close terminates background goroutines and live backend sessions. After it
+// returns no new SSE notifications fire and all subscriber channels have
+// been closed so blocked admin handlers can exit cleanly. Errors are
+// swallowed because this is only called during shutdown.
 func (g *Gateway) Close() {
+	g.cancel()
+	g.wg.Wait()
 	for _, b := range g.backends {
+		// Close subscriber channels under mu so any concurrent recordCall
+		// either ran before us (sent through a still-open channel) or sees
+		// b.closed and skips the send. With sends pulled inside mu (see
+		// recordCall) there is no window where a send races a close.
+		b.mu.Lock()
+		b.closed = true
+		subs := b.logSubs
+		b.logSubs = nil
+		b.mu.Unlock()
+		for _, ch := range subs {
+			close(ch)
+		}
+
 		b.mu.RLock()
 		sess := b.sharedSession
 		b.mu.RUnlock()
@@ -379,6 +425,72 @@ func (g *Gateway) Close() {
 				_ = us.sess.Close()
 			}
 		}
+		clear(b.userSessions)
+		b.userSessionsMu.Unlock()
+	}
+}
+
+// reapUserSessions runs in a background goroutine and periodically closes
+// per-user MCP sessions that have been idle longer than
+// userSessionIdleThreshold. Without this the userSessions map grows
+// unbounded over the gateway's lifetime — once-and-done users would leave
+// their session behind indefinitely.
+func (g *Gateway) reapUserSessions(ctx context.Context) {
+	defer g.wg.Done()
+	ticker := time.NewTicker(userSessionReapInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now()
+			for _, b := range g.backends {
+				if b.authType != config.AuthTypeOAuth {
+					continue
+				}
+				b.reapIdleSessions(now)
+			}
+		}
+	}
+}
+
+// reapIdleSessions closes and removes every per-user session whose last use
+// was earlier than threshold. Each candidate is inspected under its own
+// us.mu so an in-flight dial blocks the reaper for the duration of that
+// dial rather than racing it; userSessionsMu is not held across the
+// session-level lock or the network-bound Close so the rest of the map
+// stays available.
+func (b *backend) reapIdleSessions(now time.Time) {
+	threshold := now.Add(-userSessionIdleThreshold)
+	b.userSessionsMu.Lock()
+	candidates := make([]string, 0, len(b.userSessions))
+	for uid := range b.userSessions {
+		candidates = append(candidates, uid)
+	}
+	b.userSessionsMu.Unlock()
+
+	for _, uid := range candidates {
+		b.userSessionsMu.Lock()
+		us, ok := b.userSessions[uid]
+		b.userSessionsMu.Unlock()
+		if !ok {
+			continue
+		}
+		us.mu.Lock()
+		stale := us.sess != nil && !us.lastUsed.IsZero() && us.lastUsed.Before(threshold)
+		var toClose *mcp.ClientSession
+		if stale {
+			toClose = us.sess
+			us.sess = nil
+		}
+		us.mu.Unlock()
+		if !stale {
+			continue
+		}
+		_ = toClose.Close()
+		b.userSessionsMu.Lock()
+		delete(b.userSessions, uid)
 		b.userSessionsMu.Unlock()
 	}
 }
@@ -723,6 +835,7 @@ func (b *backend) recordCall(tool, userID string, start time.Time, args any, res
 	}
 
 	b.mu.Lock()
+	defer b.mu.Unlock()
 	// ring buffer write
 	b.logBuf[b.logHead] = e
 	b.logHead = (b.logHead + 1) % logCap
@@ -739,12 +852,14 @@ func (b *backend) recordCall(tool, userID string, start time.Time, args any, res
 		b.metrics.PerTool = make(map[string]int64)
 	}
 	b.metrics.PerTool[tool]++
-	subs := make([]chan CallEntry, len(b.logSubs))
-	copy(subs, b.logSubs)
-	b.mu.Unlock()
-
-	// notify SSE subscribers outside the lock
-	for _, ch := range subs {
+	// Notify SSE subscribers under the lock so Close() — which is the only
+	// thing that closes these channels — can't run between our snapshot and
+	// our sends. The sends are non-blocking (select+default), so holding mu
+	// here is cheap.
+	if b.closed {
+		return
+	}
+	for _, ch := range b.logSubs {
 		select {
 		case ch <- e:
 		default: // subscriber too slow — drop rather than block
@@ -784,21 +899,35 @@ func (b *backend) metricsSnapshot() Metrics {
 }
 
 // subscribeLogs registers a channel to receive new CallEntry values and
-// returns an unsubscribe function. The caller must drain the channel.
+// returns an unsubscribe function. The caller must drain the channel and
+// must also handle the channel being closed — which happens when the
+// gateway shuts down so blocked SSE handlers can exit.
+//
+// If the gateway has already been closed, the returned channel is itself
+// pre-closed and unsub is a no-op so callers see EOF on the very first read.
 func (b *backend) subscribeLogs() (ch chan CallEntry, unsub func()) {
 	ch = make(chan CallEntry, 32)
 	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		close(ch)
+		return ch, func() {}
+	}
 	b.logSubs = append(b.logSubs, ch)
 	b.mu.Unlock()
 	unsub = func() {
 		b.mu.Lock()
+		defer b.mu.Unlock()
+		if b.closed {
+			// Close() already closed the channel and cleared logSubs.
+			return
+		}
 		for i, s := range b.logSubs {
 			if s == ch {
 				b.logSubs = append(b.logSubs[:i], b.logSubs[i+1:]...)
 				break
 			}
 		}
-		b.mu.Unlock()
 	}
 	return ch, unsub
 }

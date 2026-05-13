@@ -243,3 +243,82 @@ func TestRefreshingTokenStore_GetMissingIsNotFound(t *testing.T) {
 		t.Errorf("err = %v, want ErrNotFound", err)
 	}
 }
+
+// TestRefreshingTokenStore_InflightMapBounded verifies that the per-(user,
+// backend) lock entries are reclaimed after the last refresh completes —
+// otherwise the map grows by one entry per unique (user, backend) over the
+// gateway's lifetime.
+func TestRefreshingTokenStore_InflightMapBounded(t *testing.T) {
+	inner := NewMemoryTokenStore()
+	fr := &fakeRefresher{next: Tokens{
+		AccessToken:  "new",
+		RefreshToken: "rt",
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}}
+	rs := NewRefreshingTokenStore(inner, fr)
+
+	// Seed 50 distinct (user, backend) pairs each with a near-expiry token so
+	// every Get triggers a refresh.
+	const N = 50
+	for i := range N {
+		user := "u" + string(rune('A'+i%26)) + string(rune('A'+i/26))
+		if err := inner.Save(user, "slack", &Tokens{
+			AccessToken:  "old",
+			RefreshToken: "rt",
+			ExpiresAt:    time.Now().Add(10 * time.Second),
+		}); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		if _, err := rs.Get(context.Background(), user, "slack"); err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+	}
+
+	rs.mu.Lock()
+	remaining := len(rs.inflight)
+	rs.mu.Unlock()
+	if remaining != 0 {
+		t.Errorf("inflight map retained %d entries after refreshes completed, want 0", remaining)
+	}
+}
+
+// TestRefreshingTokenStore_ConcurrentRefreshCoalesces verifies the singleflight
+// behaviour: many goroutines hitting Get for the same near-expiry token only
+// trigger one upstream refresh.
+func TestRefreshingTokenStore_ConcurrentRefreshCoalesces(t *testing.T) {
+	inner := NewMemoryTokenStore()
+	if err := inner.Save("alice", "slack", &Tokens{
+		AccessToken:  "old",
+		RefreshToken: "rt",
+		ExpiresAt:    time.Now().Add(10 * time.Second),
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	fr := &fakeRefresher{next: Tokens{
+		AccessToken:  "new",
+		RefreshToken: "rt",
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}}
+	rs := NewRefreshingTokenStore(inner, fr)
+
+	const N = 30
+	var wg sync.WaitGroup
+	for range N {
+		wg.Go(func() {
+			if _, err := rs.Get(context.Background(), "alice", "slack"); err != nil {
+				t.Errorf("Get: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+	if fr.calls != 1 {
+		t.Errorf("refresh fired %d times, want exactly 1 (singleflight broken)", fr.calls)
+	}
+	// And the lock should have been released.
+	rs.mu.Lock()
+	remaining := len(rs.inflight)
+	rs.mu.Unlock()
+	if remaining != 0 {
+		t.Errorf("inflight map retained %d entries, want 0", remaining)
+	}
+}
