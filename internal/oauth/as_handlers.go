@@ -176,17 +176,13 @@ func (h *Handler) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse requested scopes. Default to "all configured OAuth backends" so
-	// MCP clients that don't know our backend names get a sensible behaviour.
+	// Parse requested scopes. Empty scope is legitimate — the client is just
+	// initialising a session and will OAuth lazily per backend via 401
+	// insufficient_scope challenges. Don't default-to-all-backends here;
+	// that's what made the v1 flow open browsers for backends the user never
+	// asked for.
 	requested := parseScopes(q.Get("scope"))
 	if len(requested) == 0 {
-		for _, name := range h.deps.OAuthBackends {
-			requested = append(requested, BackendScope(name))
-		}
-	}
-	if len(requested) == 0 {
-		// No OAuth backends configured — mint an empty-scope token immediately.
-		// Useful for static-only deployments that still want the protocol.
 		h.completeAuthz(w, r, &authzSession{
 			ClientID:            clientID,
 			ClientRedirectURI:   redirectURI,
@@ -297,18 +293,25 @@ func (h *Handler) advanceAuthzSession(w http.ResponseWriter, r *http.Request, se
 // completeAuthz mints an authorization code bound to the session and redirects
 // the browser back to the MCP client's redirect_uri. After this point the
 // session is finished — we remove it from the store so its memory is freed.
+//
+// The minted code's scopes are the UNION of (this session's grants) and
+// (every other backend the user has tokens for). That way, when a client
+// re-authorizes for a new backend later, the resulting token still covers
+// the backends they consented to in earlier flows — the client doesn't have
+// to juggle multiple tokens.
 func (h *Handler) completeAuthz(w http.ResponseWriter, r *http.Request, sess *authzSession) {
 	code, err := randURLSafe(32)
 	if err != nil {
 		redirectWithError(w, r, sess.ClientRedirectURI, sess.ClientState, "server_error", "code: "+err.Error())
 		return
 	}
+	tokenScopes := h.unionWithExistingGrants(sess.UserID, append(sess.Granted, sess.Pending...))
 	h.deps.Codes.put(&authorizationCode{
 		Code:                code,
 		ClientID:            sess.ClientID,
 		UserID:              sess.UserID,
 		RedirectURI:         sess.ClientRedirectURI,
-		Scopes:              append(sess.Granted, sess.Pending...),
+		Scopes:              tokenScopes,
 		CodeChallenge:       sess.CodeChallenge,
 		CodeChallengeMethod: sess.CodeChallengeMethod,
 		Expires:             time.Now().Add(authorizationCodeTTL),
@@ -417,6 +420,34 @@ func (h *Handler) userHasTokens(userID, backend string) bool {
 	}
 	_, err := h.deps.Tokens.Get(userID, backend)
 	return err == nil
+}
+
+// unionWithExistingGrants returns sessionScopes plus every other backend
+// scope the user has tokens for, deduplicated and preserving order. Used by
+// completeAuthz so a newly issued token covers prior consents too — the
+// client doesn't accumulate one-token-per-backend over time.
+func (h *Handler) unionWithExistingGrants(userID string, sessionScopes []string) []string {
+	seen := make(map[string]struct{}, len(sessionScopes)+len(h.deps.OAuthBackends))
+	out := make([]string, 0, len(sessionScopes)+len(h.deps.OAuthBackends))
+	for _, s := range sessionScopes {
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	for _, name := range h.deps.OAuthBackends {
+		s := BackendScope(name)
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		if !h.userHasTokens(userID, name) {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }
 
 // knowsBackend reports whether name is one of the configured OAuth backends.

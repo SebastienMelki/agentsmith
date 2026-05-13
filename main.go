@@ -216,14 +216,24 @@ func run(cfgPath string) error {
 	// /callback) must be reachable unauthenticated — that's the whole point
 	// of the 401 challenge. Mount them on a public outer mux that wraps the
 	// guarded /mcp handler under "/".
-	guardedMCP := identity.Middleware(authOpts)(mcpMux)
+	//
+	// Middleware order on /mcp (outermost-in):
+	//   identity → scope-check → MCP handler
+	// identity resolves the caller into a *User on the context; scope-check
+	// reads that user to decide whether the tool call needs an OAuth round
+	// trip. Static-backend tool calls and tools/list skip the check entirely.
+	guarded := http.Handler(mcpMux)
+	if asEnabled {
+		guarded = gw.ScopeMiddleware(oauthHandler.ResourceMetadataURL)(guarded)
+	}
+	guarded = identity.Middleware(authOpts)(guarded)
 	publicMux := http.NewServeMux()
 	if asEnabled {
 		asMux := oauthHandler.HandleASMount()
 		publicMux.Handle("/.well-known/", asMux)
 		publicMux.Handle("/oauth/", asMux)
 	}
-	publicMux.Handle("/", guardedMCP)
+	publicMux.Handle("/", guarded)
 	mcpHandler := http.Handler(publicMux)
 	mcpHandler = logging.RequestIDMiddleware(mcpHandler)
 	if cfg.Logging.Access.MCP != nil && *cfg.Logging.Access.MCP {

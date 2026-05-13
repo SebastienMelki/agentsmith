@@ -408,6 +408,67 @@ func TestBackendFromScope(t *testing.T) {
 	}
 }
 
+// TestHandleAuthorize_EmptyScopeMintsImmediately confirms that an /authorize
+// request without a scope param mints a code (and ultimately a zero-scope
+// token) without redirecting to any upstream. This is what an MCP client
+// does to initialise an OAuth session before any tool call has 401'd —
+// nobody should pop a browser tab for backends the user hasn't tried yet.
+func TestHandleAuthorize_EmptyScopeMintsImmediately(t *testing.T) {
+	h := newASHandler(t, "https://upstream/authorize", "https://upstream/token")
+	client, _ := h.deps.Clients.Register("x", []string{"http://localhost:1234/cb"})
+
+	q := url.Values{}
+	q.Set("response_type", "code")
+	q.Set("client_id", client.ID)
+	q.Set("redirect_uri", "http://localhost:1234/cb")
+	q.Set("code_challenge", "c")
+	q.Set("code_challenge_method", "S256")
+	q.Set("state", "s1")
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+		"http://gateway/oauth/authorize?"+q.Encode(), http.NoBody)
+	rr := httptest.NewRecorder()
+	h.HandleAuthorize(rr, req)
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302 back to client", rr.Code)
+	}
+	loc, _ := url.Parse(rr.Header().Get("Location"))
+	if loc.Host != "localhost:1234" {
+		t.Errorf("redirect went somewhere other than the client: %q", loc.String())
+	}
+	if loc.Query().Get("code") == "" {
+		t.Errorf("no code on redirect: %q", loc.String())
+	}
+}
+
+// TestCompleteAuthz_UnionsExistingGrants confirms that the issued token
+// covers BOTH the just-granted scopes AND every other backend the user
+// already had tokens for. That way a second OAuth flow doesn't drop coverage
+// for backends authorized in earlier flows.
+func TestCompleteAuthz_UnionsExistingGrants(t *testing.T) {
+	h := newASHandler(t, "https://upstream/authorize", "https://upstream/token")
+	// Add a second OAuth backend and pre-seed alice's tokens for it. The
+	// scope union should pick that up automatically.
+	h.deps.Registry.Set(&BackendConfig{
+		Name:      "gmail",
+		ClientID:  "g-cid",
+		Endpoints: &Endpoints{AuthorizationURL: "https://g/authorize", TokenURL: "https://g/token"}, //nolint:gosec // fixture URLs, not credentials
+	})
+	h.deps.OAuthBackends = []string{"slack", "gmail"}
+	_ = h.deps.Tokens.Save("alice", "gmail", &secrets.Tokens{AccessToken: "existing"})
+
+	got := h.unionWithExistingGrants("alice", []string{"slack:*"})
+	want := map[string]bool{"slack:*": true, "gmail:*": true}
+	if len(got) != len(want) {
+		t.Fatalf("union = %v, want both slack and gmail scopes", got)
+	}
+	for _, s := range got {
+		if !want[s] {
+			t.Errorf("unexpected scope in union: %q (full: %v)", s, got)
+		}
+	}
+}
+
 func TestParseScopes_Deduplicates(t *testing.T) {
 	got := parseScopes("slack:* dodo:* slack:*  ")
 	if len(got) != 2 {

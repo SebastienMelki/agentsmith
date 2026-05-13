@@ -223,42 +223,43 @@ func TestMiddleware_ProtectedAttachesResolvedUser(t *testing.T) {
 	}
 }
 
-// TestMiddleware_UnprotectedWithBearerRequiresToken confirms that wiring an
-// AS bearer lookup flips unprotected-mode from "anyone passes" to "AS token
-// required" so MCP clients receive the 401 + WWW-Authenticate challenge that
-// opens the browser.
-func TestMiddleware_UnprotectedWithBearerRequiresToken(t *testing.T) {
+// TestMiddleware_UnprotectedWithBearerAcceptsBothAnonymousAndToken confirms
+// that wiring an AS bearer lookup does NOT force callers to present a token —
+// anonymous calls still resolve to the default user. Per-tool-call scope
+// checks (in a different middleware) drive the browser-opens behaviour, not
+// a blanket 401 at connect time. Otherwise static-backend tools would be
+// blocked for users who have never run OAuth.
+func TestMiddleware_UnprotectedWithBearerAcceptsBothAnonymousAndToken(t *testing.T) {
 	store := NewMemoryStore()
-	called := false
+	var seen *User
 	h := Middleware(Options{
 		Mode:  config.ModeUnprotected,
 		Users: store,
 		Bearer: func(token string) (string, bool) {
 			if token == "good-token" {
-				return DefaultUserID, true
+				return "alice", true
 			}
 			return "", false
 		},
 		ResourceMetadata: func(_ *http.Request) string {
 			return "http://gateway/.well-known/oauth-protected-resource"
 		},
-	})(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { called = true }))
+	})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		seen = FromContext(r.Context())
+	}))
 
-	// No bearer → 401 with resource_metadata.
+	// No bearer → 200, default user attached.
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("no-bearer status = %d, want 401", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Errorf("anonymous status = %d, want 200", rr.Code)
 	}
-	if !strings.Contains(rr.Header().Get("WWW-Authenticate"), "resource_metadata=") {
-		t.Errorf("WWW-Authenticate missing resource_metadata: %q", rr.Header().Get("WWW-Authenticate"))
-	}
-	if called {
-		t.Error("inner handler ran despite missing bearer")
+	if seen == nil || seen.ID != DefaultUserID {
+		t.Errorf("anonymous user = %+v, want default", seen)
 	}
 
-	// Good bearer → passes through.
+	// Good bearer → 200, AS-mapped user wins.
 	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 	req2.Header.Set("Authorization", "Bearer good-token")
 	rr2 := httptest.NewRecorder()
@@ -266,7 +267,7 @@ func TestMiddleware_UnprotectedWithBearerRequiresToken(t *testing.T) {
 	if rr2.Code != http.StatusOK {
 		t.Errorf("good-bearer status = %d, want 200", rr2.Code)
 	}
-	if !called {
-		t.Error("inner handler not invoked for good bearer")
+	if seen == nil || seen.ID != "alice" {
+		t.Errorf("bearer user = %+v, want alice", seen)
 	}
 }

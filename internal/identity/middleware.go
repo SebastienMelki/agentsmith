@@ -98,14 +98,11 @@ func (o Options) resolveUser(r *http.Request) (*User, string, bool) {
 		}
 		return u, "", true
 	default:
-		// Unprotected mode. If AS is wired we still require a bearer — that's
-		// how Claude Code learns to open the browser. Without AS, anyone passes.
-		if o.Bearer != nil {
-			if bearer == "" {
-				return nil, "missing_bearer", false
-			}
-			return nil, "unknown_token", false
-		}
+		// Unprotected mode. Anonymous calls always pass — that's the point of
+		// "unprotected." The browser-opens-automatically behaviour is driven
+		// per-tool-call by the scope-check middleware further down the chain,
+		// not by gating the whole MCP endpoint behind a bearer up front.
+		// Static-backend tools must work for users who have never OAuth'd.
 		return defaultUser(), "", true
 	}
 }
