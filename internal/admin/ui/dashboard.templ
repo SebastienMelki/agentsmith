@@ -7,20 +7,27 @@ import (
 )
 
 // Dashboard renders the full admin dashboard page.
-templ Dashboard(backends []gateway.BackendDetail, agg gateway.Metrics) {
+templ Dashboard(backends []gateway.BackendDetail, agg gateway.Metrics, unprotected bool) {
 	<!DOCTYPE html>
 	<html lang="en" data-theme="dark">
 		@sharedHead("Agentsmith · Admin")
 		<body>
-			@trustedNetworkBanner()
+			if unprotected {
+				@unprotectedModeBanner()
+			} else {
+				@trustedNetworkBanner()
+			}
 			<header
 				class="container-fluid"
-				style="padding: 1.25rem 2rem; border-bottom: 1px solid var(--pico-muted-border-color);"
+				style="padding: 1.25rem 2rem; border-bottom: 1px solid var(--pico-muted-border-color); display: flex; align-items: center; justify-content: space-between; gap: 1rem;"
 			>
 				<hgroup style="margin: 0;">
 					<h2 style="margin: 0;">⚙️ Agentsmith</h2>
 					<p style="margin: 0;">Admin · MCP Gateway</p>
 				</hgroup>
+				<nav style="margin: 0;">
+					<a href="/users" class="secondary">Users</a>
+				</nav>
 			</header>
 			<main class="container-fluid as-main" style="margin-top: 2rem;">
 				@BackendsPanel(backends, agg)

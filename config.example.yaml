@@ -6,14 +6,51 @@ listenAddr: ":3001"
 adminAddr: ":3002" # internal status/admin API — keep off public interfaces
 path: /mcp
 
+# authMode controls who can call the MCP endpoint.
+#   unprotected (default): anyone reaching /mcp is treated as the "default"
+#     user. All connected OAuth identities are shared. Suitable for solo or
+#     trusted-network deployments. A warning banner appears in the admin UI.
+#   protected: requires Authorization: Bearer <api_key>. Create users via
+#     the admin UI at /users; each user gets their own OAuth identities.
+authMode: unprotected
+
+# oauth.callbackBaseUrl is OPTIONAL. When set, it overrides the redirect URI
+# the gateway sends to upstream authorization servers. By default the URI is
+# auto-derived from the incoming /oauth/connect request (honouring
+# X-Forwarded-Proto / X-Forwarded-Host) — only set this when your proxy
+# strips those headers or your gateway's public hostname differs from what
+# requests carry.
+# oauth.ticketKey signs the short-lived ticket embedded in connect URLs.
+# Leaving it empty generates a fresh key per restart, which invalidates any
+# previously-issued connect URLs. Set a stable secret for production.
+oauth:
+    callbackBaseUrl: ""
+    ticketKey: ${OAUTH_TICKET_KEY}
+
 targets:
+    # Static-credential backend: same shape as before — a fixed Authorization
+    # header that every caller shares.
     - name: dodo
       url: http://127.0.0.1:8765/mcp
       headers:
           X-Dodo-API-Key: ${DODO_PAYMENTS_API_KEY}
           X-Dodo-Webhook-Key: ${DODO_PAYMENTS_WEBHOOK_KEY}
 
+    # OAuth backend: each end user connects their own account via the admin
+    # UI. The gateway holds the tokens and refreshes them automatically.
+    #
+    # By default the gateway runs MCP-spec discovery against the URL above
+    # (/.well-known/oauth-protected-resource then
+    # /.well-known/oauth-authorization-server) and performs Dynamic Client
+    # Registration (RFC 7591) on first connect — no clientId/clientSecret
+    # required. Provide them only when the upstream does not support DCR or
+    # you prefer a pre-registered app.
     - name: slack
-      url: http://127.0.0.1:8766/mcp
-      headers:
-          X-Slack-Token: ${SLACK_TOKEN}
+      url: https://slack.example.com/mcp
+      auth:
+          type: oauth
+          # clientId: ${SLACK_CLIENT_ID}           # optional — DCR runs when omitted
+          # clientSecret: ${SLACK_CLIENT_SECRET}
+          # scopes: [channels:read, chat:write]    # optional — providers usually advertise defaults
+          # authorizationUrl: ...                  # optional override when discovery fails
+          # tokenUrl: ...

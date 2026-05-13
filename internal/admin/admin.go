@@ -4,12 +4,17 @@
 //
 // Endpoints:
 //
-//	GET /                          — live dashboard (HTML)
-//	GET /healthz                   — liveness check (JSON)
-//	GET /backends                  — per-backend status array (JSON)
-//	GET /ui/backends               — BackendsPanel htmx partial
-//	GET /ui/backends/{name}        — backend detail page (HTML)
-//	GET /ui/backends/{name}/status — detail-page status-strip partial (htmx poll)
+//	GET    /                          — live dashboard (HTML)
+//	GET    /healthz                   — liveness check (JSON)
+//	GET    /backends                  — per-backend status array (JSON)
+//	GET    /ui/backends               — BackendsPanel htmx partial
+//	GET    /ui/backends/{name}        — backend detail page (HTML)
+//	GET    /ui/backends/{name}/status — detail-page status-strip partial (htmx poll)
+//	GET    /users                     — users page (HTML) + JSON if Accept: application/json
+//	POST   /users                     — create user, returns api_key once
+//	DELETE /users/{id}                — revoke user
+//	GET    /oauth/connect/{backend}   — start upstream OAuth flow
+//	GET    /oauth/callback/{backend}  — upstream OAuth callback
 package admin
 
 import (
@@ -17,10 +22,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/sebastienmelki/agentsmith/internal/admin/ui"
+	"github.com/sebastienmelki/agentsmith/internal/config"
 	"github.com/sebastienmelki/agentsmith/internal/gateway"
+	"github.com/sebastienmelki/agentsmith/internal/identity"
+	"github.com/sebastienmelki/agentsmith/internal/oauth"
 )
 
 // gatewaySource is the subset of Gateway the admin server needs. Keeping it
@@ -35,12 +44,28 @@ type gatewaySource interface {
 
 // Server is the admin HTTP server.
 type Server struct {
-	gw gatewaySource
+	gw       gatewaySource
+	users    identity.Store
+	oauthH   *oauth.Handler // nil when no OAuth backends are configured
+	authMode config.AuthMode
 }
 
-// New returns an admin Server backed by the given Gateway.
-func New(gw *gateway.Gateway) *Server {
-	return &Server{gw: gw}
+// Options groups the admin server's dependencies. Pass nil for OAuthHandler
+// when no upstream uses OAuth.
+type Options struct {
+	Users        identity.Store
+	OAuthHandler *oauth.Handler
+	AuthMode     config.AuthMode
+}
+
+// New returns an admin Server backed by the given Gateway and options.
+func New(gw *gateway.Gateway, opts Options) *Server {
+	return &Server{
+		gw:       gw,
+		users:    opts.Users,
+		oauthH:   opts.OAuthHandler,
+		authMode: opts.AuthMode,
+	}
 }
 
 // Handler returns an http.Handler wiring up all admin routes.
@@ -52,7 +77,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ui/backends/{name}/logs/stream", s.handleLogStream)
 	mux.HandleFunc("GET /ui/backends/{name}/status", s.handleBackendDetailStatus)
 	mux.HandleFunc("GET /ui/backends/{name}", s.handleBackendDetail)
+	mux.HandleFunc("GET /users", s.handleUsers)
+	mux.HandleFunc("POST /users", s.handleCreateUser)
+	mux.HandleFunc("DELETE /users/{id}", s.handleDeleteUser)
 	mux.HandleFunc("GET /{$}", s.handleDashboard)
+
+	// OAuth routes are only mounted when at least one backend uses OAuth.
+	if s.oauthH != nil {
+		mux.HandleFunc("GET "+oauth.ConnectPath+"{backend}", s.oauthH.HandleConnect)
+		mux.HandleFunc("GET "+oauth.CallbackPath+"{backend}", s.oauthH.HandleCallback)
+	}
 	return mux
 }
 
@@ -99,7 +133,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	backends := s.gw.BackendDetails()
 	metrics := s.gw.AggregateMetrics()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := ui.Dashboard(backends, metrics).Render(r.Context(), w); err != nil {
+	if err := ui.Dashboard(backends, metrics, s.unprotected()).Render(r.Context(), w); err != nil {
 		slog.Error("admin: failed to render dashboard", "error", err)
 	}
 }
@@ -124,7 +158,7 @@ func (s *Server) handleBackendDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := ui.BackendDetailPage(detail).Render(r.Context(), w); err != nil {
+	if err := ui.BackendDetailPage(detail, s.unprotected()).Render(r.Context(), w); err != nil {
 		slog.Error("admin: failed to render backend detail", "name", name, "error", err)
 	}
 }
@@ -183,6 +217,103 @@ func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 			_ = rc.Flush()
 		}
 	}
+}
+
+// handleUsers renders the users page (HTML) or returns the user list as JSON
+// when the client asks for it via Accept.
+func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
+	if s.users == nil {
+		http.Error(w, "users not configured", http.StatusInternalServerError)
+		return
+	}
+	users := s.users.List()
+	if wantsJSON(r) {
+		writeJSON(w, http.StatusOK, users)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := ui.UsersPage(users, s.authMode == config.ModeProtected, s.unprotected()).Render(r.Context(), w); err != nil {
+		slog.Error("admin: failed to render users page", "error", err)
+	}
+}
+
+// handleCreateUser creates a user and returns the freshly-minted API key. The
+// plaintext key is only shown here; subsequent reads only see metadata.
+func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
+	if s.users == nil {
+		http.Error(w, "users not configured", http.StatusInternalServerError)
+		return
+	}
+	if s.authMode != config.ModeProtected {
+		http.Error(w, "user creation only valid in protected mode", http.StatusForbidden)
+		return
+	}
+	var body struct {
+		Email string `json:"email"`
+	}
+	// Accept both JSON and form bodies for convenience.
+	switch ct := r.Header.Get("Content-Type"); {
+	case strings.HasPrefix(ct, "application/json"):
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	default:
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		body.Email = r.PostForm.Get("email")
+	}
+	if body.Email == "" {
+		http.Error(w, "email is required", http.StatusBadRequest)
+		return
+	}
+	user, key, err := s.users.Create(body.Email)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if wantsJSON(r) {
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"user":    user,
+			"api_key": key,
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := ui.UserCreatedPage(user, key, s.unprotected()).Render(r.Context(), w); err != nil {
+		slog.Error("admin: failed to render user-created page", "error", err)
+	}
+}
+
+// handleDeleteUser revokes a user. Idempotent — deleting a non-existent user
+// is not an error.
+func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	if s.users == nil {
+		http.Error(w, "users not configured", http.StatusInternalServerError)
+		return
+	}
+	id := r.PathValue("id")
+	if err := s.users.Delete(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// unprotected reports whether the gateway is currently in ModeUnprotected.
+// Templates read this to decide whether to show the warning banner.
+func (s *Server) unprotected() bool {
+	return s.authMode != config.ModeProtected
+}
+
+// wantsJSON returns true when the client signalled it wants JSON via the
+// Accept header. The HTML pages render by default so a curl/wget user sees
+// readable text; an MCP client or our own UI can opt into JSON.
+func wantsJSON(r *http.Request) bool {
+	a := r.Header.Get("Accept")
+	return strings.Contains(a, "application/json")
 }
 
 // writeJSON encodes v as JSON and writes it to w with the given status code.
