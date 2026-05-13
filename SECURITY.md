@@ -42,8 +42,10 @@ Out of scope:
 
 - Issues in upstream MCP backends (report to their maintainers).
 - Misconfiguration where the operator exposes the admin port (`adminAddr`,
-  default `:3002`) to a public network. Keep it on `127.0.0.1` or behind a
-  firewall.
+  default `:3002`) to a public network. The admin port has no authentication
+  and, in `protected` mode, also issues MCP credentials via `POST /users` —
+  exposing it is equivalent to full auth bypass on the MCP endpoint. Keep it
+  on `127.0.0.1` or behind a firewall.
 - Denial of service through resource exhaustion in unauthenticated test
   deployments.
 
