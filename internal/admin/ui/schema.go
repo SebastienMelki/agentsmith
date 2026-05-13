@@ -30,6 +30,13 @@ type SchemaNode struct {
 	Children               []*SchemaNode
 }
 
+// maxSchemaDepth caps the recursion depth of ParseSchema. Real-world tool
+// schemas don't reach anywhere near this — a flat objects-and-primitives
+// schema is depth 1, an array of objects with nested arrays is maybe 4-5.
+// The cap exists so a pathological backend (intentional or not) can't blow
+// the admin-server goroutine's stack while rendering the detail page.
+const maxSchemaDepth = 32
+
 // ParseSchema decodes a pretty-printed JSON-Schema string into a
 // SchemaNode tree. An empty input returns (nil, nil) — callers treat
 // missing schemas as "no tree to render". Malformed JSON returns an
@@ -42,10 +49,21 @@ func ParseSchema(rawJSON string) (*SchemaNode, error) {
 	if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
 		return nil, fmt.Errorf("parse schema: %w", err)
 	}
-	return parseNode("", raw, false), nil
+	return parseNode("", raw, false, 0), nil
 }
 
-func parseNode(name string, raw map[string]any, required bool) *SchemaNode {
+func parseNode(name string, raw map[string]any, required bool, depth int) *SchemaNode {
+	if depth > maxSchemaDepth {
+		// Render a leaf marker rather than continuing to recurse. The user
+		// sees that the schema was truncated; the detail page stays usable.
+		return &SchemaNode{
+			Name:                   name,
+			Type:                   "...",
+			Description:            "(schema nested deeper than the renderer's limit; truncated)",
+			Required:               required,
+			AdditionalPropsAllowed: true,
+		}
+	}
 	n := &SchemaNode{
 		Name:                   name,
 		Required:               required,
@@ -110,13 +128,13 @@ func parseNode(name string, raw map[string]any, required bool) *SchemaNode {
 			if !ok {
 				continue
 			}
-			n.Children = append(n.Children, parseNode(k, child, requiredSet[k]))
+			n.Children = append(n.Children, parseNode(k, child, requiredSet[k], depth+1))
 		}
 	}
 
 	// Array: one child named "items" representing the item schema.
 	if items, ok := raw["items"].(map[string]any); ok {
-		n.Children = append(n.Children, parseNode("items", items, false))
+		n.Children = append(n.Children, parseNode("items", items, false, depth+1))
 	}
 
 	return n
