@@ -221,14 +221,47 @@ func New(ctx context.Context, cfg *config.Config, deps Deps) (*Gateway, error) {
 		g.backends = append(g.backends, b)
 		if b.authType == config.AuthTypeOAuth {
 			// OAuth backends start in awaiting_auth until the first user OAuths.
+			// We register a "<backend>__connect" placeholder tool so the
+			// federated server advertises something for this backend — MCP
+			// clients (Claude Desktop, etc.) read tool descriptions and learn
+			// the backend exists. Calling it returns the OAuth URL.
 			b.mu.Lock()
 			b.state = StateAwaitingAuth
 			b.mu.Unlock()
+			g.registerConnectPlaceholder(b)
 		} else {
 			go g.connectLoop(ctx, b)
 		}
 	}
 	return g, nil
+}
+
+// registerConnectPlaceholder adds a "<backend>__connect" tool to the
+// federated server for an OAuth backend, advertised before any user has
+// completed OAuth. The tool description tells the LLM what this backend
+// would enable; the handler returns the per-user connect URL.
+func (g *Gateway) registerConnectPlaceholder(b *backend) {
+	name := b.name + namespaceSep + "connect"
+	tool := &mcp.Tool{
+		Name:        name,
+		Title:       "Connect " + b.name,
+		Description: "Connect this user's " + b.name + " account to enable " + b.name + " tools. Returns an OAuth authorization URL the user opens in a browser. Call this when " + b.name + " tools would help but are not yet available.",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
+		},
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
+	}
+	g.server.AddTool(tool, func(ctx context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		userID := userIDFromContext(ctx)
+		if userID == "" {
+			return errorResult("no user on request — auth middleware misconfigured"), nil
+		}
+		return g.connectPromptResult(b.name, userID), nil
+	})
 }
 
 // newBackend builds a backend from a config target. The shared mcp.Client is
