@@ -117,11 +117,10 @@ func run(cfgPath string) error {
 		CallbackBaseURL:       cfg.OAuth.CallbackBaseURL,
 		TrustForwardedHeaders: cfg.OAuth.TrustForwardedHeaders,
 		OnSuccess: func(ctx context.Context, backend, userID string) error {
-			if err := gw.RegisterToolsForOAuthBackend(ctx, backend, userID); err != nil {
-				slog.Warn("post-OAuth tool registration failed", "backend", backend, "user_id", userID, "error", err.Error())
-				return err
-			}
-			return nil
+			// The OAuth handler logs hook failures with backend+user context
+			// before rendering the partial-success page, so we just bubble
+			// the error up without an extra log line here.
+			return gw.RegisterToolsForOAuthBackend(ctx, backend, userID)
 		},
 	})
 
