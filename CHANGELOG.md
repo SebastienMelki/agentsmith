@@ -35,6 +35,64 @@ changes (documented in their release notes).
   event. The dialog connects lazily (on first open) and stays subscribed for
   the page lifetime; new rows are prepended in real time without polling.
   A 15-second heartbeat comment keeps the connection alive through proxies.
+- **Per-user OAuth identities** with `authMode: protected` — each MCP caller
+  authenticates with an API key and gets their own OAuth tokens per backend.
+  Backends declare `auth.type: oauth` in `config.yaml`; the gateway runs
+  RFC 9728 / RFC 8414 discovery and RFC 7591 Dynamic Client Registration
+  on first connect, mints per-user signed connect tickets, and refreshes
+  access tokens transparently.
+
+### Changed
+
+- **OAuth `OnSuccess` hook returns an error** and `HandleCallback` renders a
+  partial-success page when post-OAuth tool registration fails. Tokens are
+  still persisted; re-clicking the connect link reruns the hook.
+- **`oauth.trustForwardedHeaders` opt-in** — the auto-derived OAuth
+  `redirect_uri` no longer honours `X-Forwarded-Proto` / `X-Forwarded-Host`
+  by default. Set the new flag (or, preferred, set `oauth.callbackBaseUrl`
+  explicitly) when running behind a trusted proxy.
+- **`make test` runs with `-race`** so the convenience target matches CI.
+- **Config rejects unsupported `${...}` placeholders** — names that don't
+  match `[A-Z_][A-Z0-9_]*` (e.g. lowercase) used to silently fall through
+  expansion and surface much later as a confusing parse/auth error; the
+  loader now flags them at startup with the offending name.
+- **Operator-supplied ticket signing keys must be ≥ 32 characters** (was
+  16). The ephemeral fallback (`randomHex(32)`) is unchanged.
+
+### Fixed
+
+- **Concurrent Dynamic Client Registration race** — two simultaneous
+  `/oauth/connect` requests for the same DCR-required backend used to both
+  hit the upstream `registration_endpoint` and torn-write the shared
+  `*BackendConfig`. A per-backend `Registry.LockForUpdate` plus copy-on-write
+  serializes updates and coalesces redundant DCR calls.
+- **Unbounded `userSessions` map** in the gateway — a per-Gateway reaper
+  goroutine now closes per-user OAuth sessions idle longer than 30 minutes
+  on a 5-minute interval, so once-and-done users no longer leave entries
+  behind for the lifetime of the process.
+- **Unbounded `inflight` map** in `secrets.RefreshingTokenStore` — refresh
+  locks are reference-counted and reclaimed when the last waiter releases.
+- **SSE subscriber channels closed on shutdown** — `Gateway.Close()` now
+  closes every `logSubs` channel under lock; admin SSE handlers exit cleanly
+  via `entry, ok := <-ch` instead of blocking until the request context
+  cancels.
+- **`DELETE /users/{id}` refuses outside protected mode** to match the
+  existing guard on `POST /users` (asymmetry, not a security hole — the
+  admin port is documented as unauthenticated).
+- **`publish.yml` only pushes when Docker Hub credentials are configured**
+  so forks running the workflow without secrets do a build-only validation
+  instead of failing at the push step. The header comment had always
+  claimed this, but `push: true` was unconditional.
+- **OAuth post-callback hook errors no longer log twice** — the handler is
+  the single source of truth.
+
+### Security
+
+- **Documented that the admin port issues MCP credentials.** The previous
+  README warned about read-only state exposure, but in `protected` mode
+  `POST /users` mints API keys valid against the MCP endpoint. Reaching
+  the admin port should be treated as full auth bypass; bind it to
+  `127.0.0.1` or a sidecar-only network.
 
 ## [0.1.0] — 2026-05-09
 
