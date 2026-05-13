@@ -293,10 +293,15 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDeleteUser revokes a user. Idempotent — deleting a non-existent user
-// is not an error.
+// is not an error. Refused outside protected mode for symmetry with
+// handleCreateUser; user records only exist there in the first place.
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if s.users == nil {
 		http.Error(w, "users not configured", http.StatusInternalServerError)
+		return
+	}
+	if s.authMode != config.ModeProtected {
+		http.Error(w, "user deletion only valid in protected mode", http.StatusForbidden)
 		return
 	}
 	id := r.PathValue("id")

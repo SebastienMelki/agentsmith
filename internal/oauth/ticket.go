@@ -20,11 +20,21 @@ type TicketSigner struct {
 	key []byte
 }
 
-// NewTicketSigner returns a signer that uses the given secret key. Empty key
-// is rejected so an operator does not accidentally disable signing.
+// minTicketKeyLen is the floor we enforce on operator-supplied signing keys.
+// Sized so a printable-ASCII secret reaches at least ~192 bits of entropy —
+// HMAC-SHA256 expects ≥256 bits in principle, and at 32 chars random hex (the
+// shape randomHex(32) produces in main.go) gives a full 256. The check is a
+// guard rail against obviously weak operator input, not a cryptographic upper
+// bound: longer keys are always fine.
+const minTicketKeyLen = 32
+
+// NewTicketSigner returns a signer that uses the given secret key. Keys
+// shorter than minTicketKeyLen are rejected so an operator does not
+// accidentally pair a stable, persisted tickets workflow with a guessable
+// secret.
 func NewTicketSigner(key string) (*TicketSigner, error) {
-	if len(key) < 16 {
-		return nil, errors.New("oauth: ticket signing key must be at least 16 characters")
+	if len(key) < minTicketKeyLen {
+		return nil, fmt.Errorf("oauth: ticket signing key must be at least %d characters", minTicketKeyLen)
 	}
 	return &TicketSigner{key: []byte(key)}, nil
 }

@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sebastienmelki/agentsmith/internal/config"
 	"github.com/sebastienmelki/agentsmith/internal/gateway"
+	"github.com/sebastienmelki/agentsmith/internal/identity"
 )
 
 // newReq builds a context-aware GET request for the given path. Tests pass
@@ -140,6 +142,39 @@ func TestBackendDetailPartial_404WhenUnknown(t *testing.T) {
 
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rr.Code)
+	}
+}
+
+// TestUserMutations_RefusedInUnprotectedMode pins the symmetry between
+// POST /users and DELETE /users/{id}: both are user-record operations that
+// only make sense in protected mode, and both must refuse with 403 outside
+// it. Before round-2 cleanup, DELETE silently passed through and returned
+// 204 even in unprotected mode.
+func TestUserMutations_RefusedInUnprotectedMode(t *testing.T) {
+	fg := &fakeGateway{}
+	srv := &Server{gw: fg, users: identity.NewMemoryStore(), authMode: config.ModeUnprotected}
+	h := srv.Handler()
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{"POST /users", http.MethodPost, "/users"},
+		{"DELETE /users/alice", http.MethodDelete, "/users/alice"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(context.Background(), c.method, c.path, http.NoBody)
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+			if rr.Code != http.StatusForbidden {
+				t.Errorf("%s status = %d, want 403; body=%s", c.name, rr.Code, rr.Body.String())
+			}
+		})
 	}
 }
 
