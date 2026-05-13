@@ -98,6 +98,28 @@ targets:
 	}
 }
 
+// TestLoad_LowercasePlaceholderIsError pins the new behaviour: a ${var}-shaped
+// placeholder using a name that doesn't match the canonical [A-Z_][A-Z0-9_]*
+// pattern must produce a clear error, not silently leave literal "${var}" in
+// the parsed YAML (which would surface much later as an opaque auth/parse
+// failure).
+func TestLoad_LowercasePlaceholderIsError(t *testing.T) {
+	path := writeConfig(t, `
+targets:
+  - name: api
+    url: http://127.0.0.1:9000/mcp
+    headers:
+      Authorization: Bearer ${slack_token}
+`)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for lowercase placeholder, got nil")
+	}
+	if !strings.Contains(err.Error(), "slack_token") {
+		t.Errorf("error %q should name the unsupported placeholder", err.Error())
+	}
+}
+
 func TestLoad_MalformedYAMLIsError(t *testing.T) {
 	path := writeConfig(t, "this: is: not: valid: yaml:\n  - and: also: bad")
 	if _, err := Load(path); err == nil {
