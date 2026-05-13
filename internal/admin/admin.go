@@ -208,7 +208,12 @@ func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 		case <-heartbeat.C:
 			fmt.Fprintf(w, ": heartbeat\n\n")
 			_ = rc.Flush()
-		case entry := <-ch:
+		case entry, ok := <-ch:
+			if !ok {
+				// Channel closed by the gateway during shutdown — exit so
+				// the HTTP write side gets to finalise its response.
+				return
+			}
 			data, err := json.Marshal(entry)
 			if err != nil {
 				continue
