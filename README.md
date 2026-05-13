@@ -92,6 +92,8 @@ agentsmith ships a small operational HTTP server on a separate port (default `:3
 | `GET /ui/backends/{name}/logs/stream` | Server-Sent Events stream — pushes each `CallEntry` as a `log` event in real time; used by the dialog's live tail |
 | `GET /healthz` | Liveness/readiness probe — `200` when at least one backend is connected, `503` otherwise |
 | `GET /backends` | Per-backend status as a JSON array, suitable for scripts and monitoring agents |
+| `GET /users`, `POST /users`, `DELETE /users/{id}` | List, create, and revoke users in `protected` mode. `POST /users` returns a freshly-minted API key valid against the MCP endpoint. |
+| `GET /oauth/connect/{backend}`, `GET /oauth/callback/{backend}` | Browser-facing OAuth start/callback URLs (only mounted when at least one backend uses OAuth) |
 
 ### Call log
 
@@ -99,7 +101,9 @@ Every tool invocation is appended to a per-backend ring buffer (last 500 calls).
 
 On any backend detail page, click the **▶ Call Log** button (fixed bottom-right) to open the log in a modal dialog. The dialog connects to the SSE stream on first open and prepends new entries live. Clicking the backdrop or the ✕ button closes it; the SSE connection stays alive in the background so no entries are missed.
 
-> **Keep the admin port off public networks.** It exposes internal state and full request/response payloads with no authentication. Bind it to `127.0.0.1`, a private interface, or a sidecar-only network.
+> **The admin port has no authentication. Never expose it to a public network.**
+>
+> It exposes internal state and full request/response payloads, **and in `protected` mode it also issues MCP credentials** — anyone who can reach `POST /users` can mint an API key valid against the MCP endpoint. Treat exposure as full auth bypass. Bind `adminAddr` to `127.0.0.1`, a private interface, or a sidecar-only network.
 
 ## Deployment
 
