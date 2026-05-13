@@ -110,3 +110,139 @@ func TestLoad_MissingFileIsError(t *testing.T) {
 		t.Fatal("expected error for missing file, got nil")
 	}
 }
+
+func TestLoad_DefaultAuthModeIsUnprotected(t *testing.T) {
+	path := writeConfig(t, `
+targets:
+  - name: only
+    url: http://127.0.0.1:8000/mcp
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AuthMode != ModeUnprotected {
+		t.Errorf("AuthMode = %q, want %q", cfg.AuthMode, ModeUnprotected)
+	}
+}
+
+func TestLoad_InvalidAuthModeIsError(t *testing.T) {
+	path := writeConfig(t, `
+authMode: weirdmode
+targets:
+  - name: only
+    url: http://127.0.0.1:8000/mcp
+`)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for invalid authMode, got nil")
+	}
+	if !strings.Contains(err.Error(), "weirdmode") {
+		t.Errorf("error %q should name the bad value", err.Error())
+	}
+}
+
+func TestLoad_OAuthTargetRequiresCallbackBaseURL(t *testing.T) {
+	path := writeConfig(t, `
+targets:
+  - name: slack
+    url: http://127.0.0.1:8000/mcp
+    auth:
+      type: oauth
+      clientId: abc
+`)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for oauth target without callbackBaseUrl, got nil")
+	}
+	if !strings.Contains(err.Error(), "callbackBaseUrl") {
+		t.Errorf("error %q should mention callbackBaseUrl", err.Error())
+	}
+}
+
+func TestLoad_OAuthTargetRequiresClientIDOrDCR(t *testing.T) {
+	path := writeConfig(t, `
+oauth:
+  callbackBaseUrl: http://localhost:3002
+targets:
+  - name: slack
+    url: http://127.0.0.1:8000/mcp
+    auth:
+      type: oauth
+`)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for oauth target without clientId/DCR, got nil")
+	}
+	if !strings.Contains(err.Error(), "clientId") {
+		t.Errorf("error %q should mention clientId", err.Error())
+	}
+}
+
+func TestLoad_OAuthTargetHappyPath(t *testing.T) {
+	t.Setenv("TEST_CLIENT_ID", "id123")
+	t.Setenv("TEST_CLIENT_SECRET", "shh")
+	path := writeConfig(t, `
+authMode: protected
+oauth:
+  callbackBaseUrl: https://gateway.example.com
+targets:
+  - name: slack
+    url: https://slack.example.com/mcp
+    auth:
+      type: oauth
+      clientId: ${TEST_CLIENT_ID}
+      clientSecret: ${TEST_CLIENT_SECRET}
+      scopes: [channels:read, chat:write]
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AuthMode != ModeProtected {
+		t.Errorf("AuthMode = %q, want %q", cfg.AuthMode, ModeProtected)
+	}
+	if cfg.OAuth.CallbackBaseURL != "https://gateway.example.com" {
+		t.Errorf("CallbackBaseURL = %q", cfg.OAuth.CallbackBaseURL)
+	}
+	if cfg.Targets[0].Auth == nil || cfg.Targets[0].Auth.ClientID != "id123" {
+		t.Errorf("oauth client id not parsed; got %+v", cfg.Targets[0].Auth)
+	}
+}
+
+func TestLoad_UnknownAuthTypeIsError(t *testing.T) {
+	path := writeConfig(t, `
+targets:
+  - name: weird
+    url: http://127.0.0.1:8000/mcp
+    auth:
+      type: nonsense
+`)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for unknown auth type, got nil")
+	}
+}
+
+func TestLoad_StaticBackendsStillWork(t *testing.T) {
+	// Pre-existing config shape (no auth block) must continue to parse — this
+	// is the upgrade-compat guarantee for existing deployments.
+	t.Setenv("DODO_KEY", "abc")
+	path := writeConfig(t, `
+targets:
+  - name: dodo
+    url: http://127.0.0.1:8000/mcp
+    headers:
+      X-Dodo-API-Key: ${DODO_KEY}
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Targets[0].Auth != nil {
+		t.Errorf("static target should have nil Auth, got %+v", cfg.Targets[0].Auth)
+	}
+	if cfg.Targets[0].Headers["X-Dodo-API-Key"] != "abc" {
+		t.Errorf("static headers not preserved: %v", cfg.Targets[0].Headers)
+	}
+}

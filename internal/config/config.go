@@ -11,19 +11,64 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// AuthMode selects how the MCP endpoint authenticates incoming clients.
+type AuthMode string
+
+const (
+	// ModeUnprotected accepts any caller on the MCP endpoint and pins every
+	// OAuth identity to a single synthetic user. Matches the gateway's
+	// historical behaviour; the admin UI shows a warning banner.
+	ModeUnprotected AuthMode = "unprotected"
+	// ModeProtected requires Authorization: Bearer <api_key> on the MCP
+	// endpoint and stores OAuth tokens per resolved user.
+	ModeProtected AuthMode = "protected"
+)
+
+// TargetAuth configures how the gateway authenticates *to* an upstream backend.
+// A nil value (or Type == "static") means "use the static Headers map" — the
+// pre-OAuth behaviour. Type == "oauth" makes the gateway perform an OAuth 2.1
+// authorization-code flow per end user.
+type TargetAuth struct {
+	Type                string   `yaml:"type"`
+	ClientID            string   `yaml:"clientId"`
+	ClientSecret        string   `yaml:"clientSecret"`
+	Scopes              []string `yaml:"scopes"`
+	AuthorizationURL    string   `yaml:"authorizationUrl"`
+	TokenURL            string   `yaml:"tokenUrl"`
+	DynamicRegistration bool     `yaml:"dynamicRegistration"`
+}
+
+const (
+	// AuthTypeStatic is the implicit auth type when Auth is nil.
+	AuthTypeStatic = "static"
+	// AuthTypeOAuth selects the OAuth 2.1 authorization-code flow.
+	AuthTypeOAuth = "oauth"
+)
+
 // Target describes one MCP backend that agentsmith federates.
 type Target struct {
 	Name    string            `yaml:"name"`
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"`
+	Auth    *TargetAuth       `yaml:"auth"`
+}
+
+// OAuthConfig holds gateway-wide OAuth settings. CallbackBaseURL is prepended
+// to every callback path emitted in authorization-URL builds and connect-link
+// errors, so OAuth providers can redirect back to a single registered URI.
+type OAuthConfig struct {
+	CallbackBaseURL string `yaml:"callbackBaseUrl"`
+	TicketKey       string `yaml:"ticketKey"`
 }
 
 // Config is the top-level agentsmith configuration.
 type Config struct {
-	ListenAddr string   `yaml:"listenAddr"`
-	AdminAddr  string   `yaml:"adminAddr"`
-	Path       string   `yaml:"path"`
-	Targets    []Target `yaml:"targets"`
+	ListenAddr string      `yaml:"listenAddr"`
+	AdminAddr  string      `yaml:"adminAddr"`
+	Path       string      `yaml:"path"`
+	AuthMode   AuthMode    `yaml:"authMode"`
+	OAuth      OAuthConfig `yaml:"oauth"`
+	Targets    []Target    `yaml:"targets"`
 }
 
 // Load reads the YAML file at path, expands ${VAR} environment references,
@@ -51,6 +96,12 @@ func Load(path string) (*Config, error) {
 	if cfg.AdminAddr == "" {
 		cfg.AdminAddr = ":3002"
 	}
+	if cfg.AuthMode == "" {
+		cfg.AuthMode = ModeUnprotected
+	}
+	if cfg.AuthMode != ModeUnprotected && cfg.AuthMode != ModeProtected {
+		return nil, fmt.Errorf("authMode: %q is not a valid value (expected %q or %q)", cfg.AuthMode, ModeUnprotected, ModeProtected)
+	}
 	if len(cfg.Targets) == 0 {
 		return nil, errors.New("at least one target is required")
 	}
@@ -58,8 +109,47 @@ func Load(path string) (*Config, error) {
 		if t.Name == "" || t.URL == "" {
 			return nil, fmt.Errorf("targets[%d]: name and url are required", i)
 		}
+		if err := validateTargetAuth(t); err != nil {
+			return nil, fmt.Errorf("targets[%d] (%s): %w", i, t.Name, err)
+		}
+	}
+	if needsOAuthCallback(cfg.Targets) && cfg.OAuth.CallbackBaseURL == "" {
+		return nil, errors.New("oauth.callbackBaseUrl is required when any target uses auth.type: oauth")
 	}
 	return &cfg, nil
+}
+
+// validateTargetAuth ensures the auth block is internally consistent. The
+// gateway can dial a static backend with nothing, but an OAuth backend needs
+// at minimum a clientId and either explicit endpoints or a URL we can run
+// discovery against.
+func validateTargetAuth(t Target) error {
+	if t.Auth == nil || t.Auth.Type == "" || t.Auth.Type == AuthTypeStatic {
+		return nil
+	}
+	if t.Auth.Type != AuthTypeOAuth {
+		return fmt.Errorf("auth.type: %q is not a valid value", t.Auth.Type)
+	}
+	hasExplicitEndpoints := t.Auth.AuthorizationURL != "" && t.Auth.TokenURL != ""
+	if t.Auth.ClientID == "" && !t.Auth.DynamicRegistration {
+		return errors.New("auth.clientId is required (or set auth.dynamicRegistration: true)")
+	}
+	if !hasExplicitEndpoints {
+		// Discovery against t.URL is the fallback path; nothing more to require.
+		return nil
+	}
+	return nil
+}
+
+// needsOAuthCallback reports whether any target uses oauth, so we can require
+// the gateway-wide callback base URL only when it is actually used.
+func needsOAuthCallback(targets []Target) bool {
+	for _, t := range targets {
+		if t.Auth != nil && t.Auth.Type == AuthTypeOAuth {
+			return true
+		}
+	}
+	return false
 }
 
 var envVarRe = regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
