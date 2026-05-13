@@ -60,18 +60,26 @@ type Target struct {
 
 // OAuthConfig holds gateway-wide OAuth settings.
 //
-// CallbackBaseURL is an OPTIONAL override for the gateway's public URL used
-// to build the OAuth redirect_uri sent to upstream authorization servers.
-// When empty (the default), the gateway derives the base URL from the
-// incoming /oauth/connect request — honouring X-Forwarded-Proto and
-// X-Forwarded-Host so it works behind reverse proxies. Set this only when
-// auto-detection fails (e.g. proxy strips forwarded headers).
+// CallbackBaseURL is the gateway's public URL used to build the OAuth
+// redirect_uri sent to upstream authorization servers. Set this whenever the
+// gateway sits behind a reverse proxy, NAT, or otherwise on a hostname that
+// differs from what `r.Host` carries — production deployments should always
+// set it. When empty, the redirect_uri is derived from the incoming request's
+// scheme + Host, with no proxy-header magic.
+//
+// TrustForwardedHeaders, if true, lets the auto-derived base URL honour
+// X-Forwarded-Proto and X-Forwarded-Host. Default is false because these
+// headers are caller-controlled and let an attacker reaching a (mis-exposed)
+// admin port redirect OAuth callbacks to an arbitrary host. Only enable when
+// you know the admin port sits behind a proxy that strips/overwrites those
+// headers; even then, prefer setting CallbackBaseURL explicitly.
 //
 // TicketKey signs the short-lived ticket embedded in connect URLs so the
 // gateway can identify the user from a plain browser without re-auth.
 type OAuthConfig struct {
-	CallbackBaseURL string `yaml:"callbackBaseUrl"`
-	TicketKey       string `yaml:"ticketKey"`
+	CallbackBaseURL       string `yaml:"callbackBaseUrl"`
+	TrustForwardedHeaders bool   `yaml:"trustForwardedHeaders"`
+	TicketKey             string `yaml:"ticketKey"`
 }
 
 // Config is the top-level agentsmith configuration.
