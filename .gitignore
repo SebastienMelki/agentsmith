@@ -39,6 +39,9 @@ agentsmith.env
 # working planning docs (not versioned)
 /plan.md
 
+# local Claude Code MCP server registration (developer-specific)
+/.mcp.json
+
 # Playwright MCP artefacts (screenshots + console logs from local verification)
 /.playwright-mcp/
 
