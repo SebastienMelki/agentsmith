@@ -35,9 +35,9 @@ lint:
 fmt:
 	golangci-lint fmt ./...
 
-## test: run tests
+## test: run tests with the race detector (matches CI)
 test:
-	$(GO) test ./...
+	$(GO) test -race ./...
 
 ## clean: remove build artefacts and debugger binaries
 clean:

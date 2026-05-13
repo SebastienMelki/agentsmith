@@ -152,11 +152,21 @@ func validateTargetAuth(t Target) error {
 	return nil
 }
 
-var envVarRe = regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
+// envVarRe matches ${VAR} placeholders whose names follow the conventional
+// uppercase shell-env convention. Anything else (lowercase, hyphens, missing
+// braces) is caught by anyEnvLikeRe below so we can return an explicit error
+// instead of silently leaving the literal text in the YAML, which causes
+// confusing downstream parse or auth failures.
+var (
+	envVarRe     = regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
+	anyEnvLikeRe = regexp.MustCompile(`\$\{([^}]*)\}`)
+)
 
 // expandEnv replaces ${VAR} occurrences with their environment value, erroring
-// if any referenced variable is unset. This avoids silently shipping a config
-// with empty secrets.
+// if any referenced variable is unset OR if a ${...} placeholder uses a name
+// that doesn't match the canonical uppercase form. This avoids silently
+// shipping a config with empty secrets or with literal ${...} text that the
+// user thought would be expanded.
 func expandEnv(s string) (string, error) {
 	var missing []string
 	out := envVarRe.ReplaceAllStringFunc(s, func(m string) string {
@@ -169,6 +179,16 @@ func expandEnv(s string) (string, error) {
 	})
 	if len(missing) > 0 {
 		return "", fmt.Errorf("unset environment variables referenced by config: %v", missing)
+	}
+	// After expansion, anything ${...}-shaped left in the output is a name
+	// the strict regex rejected. Flag it explicitly rather than letting it
+	// surface as a confusing YAML or runtime error.
+	if leftovers := anyEnvLikeRe.FindAllStringSubmatch(out, -1); len(leftovers) > 0 {
+		names := make([]string, 0, len(leftovers))
+		for _, m := range leftovers {
+			names = append(names, m[1])
+		}
+		return "", fmt.Errorf("unsupported ${...} placeholder(s) in config: %v — env var names must match [A-Z_][A-Z0-9_]*", names)
 	}
 	return out, nil
 }
