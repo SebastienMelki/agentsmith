@@ -139,6 +139,44 @@ func TestRefresh_SendsRefreshTokenAndParses(t *testing.T) {
 	}
 }
 
+func TestRegisterClient_ReturnsCredentials(t *testing.T) {
+	var seenBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&seenBody)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"client_id":     "dyn_cid",
+			"client_secret": "dyn_secret",
+		})
+	}))
+	defer srv.Close()
+
+	reg, err := RegisterClient(context.Background(), srv.URL, "agentsmith", "https://gw/callback/slack", []string{"chat:write"})
+	if err != nil {
+		t.Fatalf("RegisterClient: %v", err)
+	}
+	if reg.ClientID != "dyn_cid" || reg.ClientSecret != "dyn_secret" {
+		t.Errorf("registration = %+v", reg)
+	}
+	if seenBody["client_name"] != "agentsmith" {
+		t.Errorf("client_name = %v", seenBody["client_name"])
+	}
+	if uris, ok := seenBody["redirect_uris"].([]any); !ok || len(uris) != 1 || uris[0] != "https://gw/callback/slack" {
+		t.Errorf("redirect_uris = %v", seenBody["redirect_uris"])
+	}
+}
+
+func TestRegisterClient_NonOKStatusIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":"invalid_redirect_uri"}`, http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	_, err := RegisterClient(context.Background(), srv.URL, "agentsmith", "bad", nil)
+	if err == nil || !strings.Contains(err.Error(), "invalid_redirect_uri") {
+		t.Errorf("err = %v", err)
+	}
+}
+
 func TestExchangeCode_EmptyAccessTokenIsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"expires_in": 3600})

@@ -28,14 +28,19 @@ const (
 // A nil value (or Type == "static") means "use the static Headers map" — the
 // pre-OAuth behaviour. Type == "oauth" makes the gateway perform an OAuth 2.1
 // authorization-code flow per end user.
+//
+// ClientID and ClientSecret are optional. When ClientID is empty, the gateway
+// runs RFC 7591 Dynamic Client Registration against the discovered
+// registration_endpoint on the first connect — matching what MCP clients like
+// Claude Desktop do. Provide explicit values only when the upstream does not
+// support DCR.
 type TargetAuth struct {
-	Type                string   `yaml:"type"`
-	ClientID            string   `yaml:"clientId"`
-	ClientSecret        string   `yaml:"clientSecret"`
-	Scopes              []string `yaml:"scopes"`
-	AuthorizationURL    string   `yaml:"authorizationUrl"`
-	TokenURL            string   `yaml:"tokenUrl"`
-	DynamicRegistration bool     `yaml:"dynamicRegistration"`
+	Type             string   `yaml:"type"`
+	ClientID         string   `yaml:"clientId"`
+	ClientSecret     string   `yaml:"clientSecret"`
+	Scopes           []string `yaml:"scopes"`
+	AuthorizationURL string   `yaml:"authorizationUrl"`
+	TokenURL         string   `yaml:"tokenUrl"`
 }
 
 const (
@@ -125,23 +130,16 @@ func Load(path string) (*Config, error) {
 }
 
 // validateTargetAuth ensures the auth block is internally consistent. The
-// gateway can dial a static backend with nothing, but an OAuth backend needs
-// at minimum a clientId and either explicit endpoints or a URL we can run
-// discovery against.
+// gateway can dial a static backend with nothing. For OAuth backends, no
+// upfront credentials are required: if clientId is empty, the gateway will
+// run Dynamic Client Registration (RFC 7591) against the discovered
+// registration_endpoint on the first connect.
 func validateTargetAuth(t Target) error {
 	if t.Auth == nil || t.Auth.Type == "" || t.Auth.Type == AuthTypeStatic {
 		return nil
 	}
 	if t.Auth.Type != AuthTypeOAuth {
 		return fmt.Errorf("auth.type: %q is not a valid value", t.Auth.Type)
-	}
-	hasExplicitEndpoints := t.Auth.AuthorizationURL != "" && t.Auth.TokenURL != ""
-	if t.Auth.ClientID == "" && !t.Auth.DynamicRegistration {
-		return errors.New("auth.clientId is required (or set auth.dynamicRegistration: true)")
-	}
-	if !hasExplicitEndpoints {
-		// Discovery against t.URL is the fallback path; nothing more to require.
-		return nil
 	}
 	return nil
 }

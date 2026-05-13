@@ -38,18 +38,19 @@ targets:
 
     # OAuth backend: each end user connects their own account via the admin
     # UI. The gateway holds the tokens and refreshes them automatically.
-    # The authorizationUrl/tokenUrl fields are optional — the gateway tries
-    # MCP-spec discovery (/.well-known/oauth-protected-resource +
-    # /.well-known/oauth-authorization-server) first and falls back to these
-    # values if the upstream does not publish well-known docs.
+    #
+    # By default the gateway runs MCP-spec discovery against the URL above
+    # (/.well-known/oauth-protected-resource then
+    # /.well-known/oauth-authorization-server) and performs Dynamic Client
+    # Registration (RFC 7591) on first connect — no clientId/clientSecret
+    # required. Provide them only when the upstream does not support DCR or
+    # you prefer a pre-registered app.
     - name: slack
       url: https://slack.example.com/mcp
       auth:
           type: oauth
-          clientId: ${SLACK_CLIENT_ID}
-          clientSecret: ${SLACK_CLIENT_SECRET}
-          scopes:
-              - channels:read
-              - chat:write
-          # authorizationUrl: https://slack.com/oauth/v2/authorize
-          # tokenUrl: https://slack.com/api/oauth.v2.access
+          # clientId: ${SLACK_CLIENT_ID}           # optional — DCR runs when omitted
+          # clientSecret: ${SLACK_CLIENT_SECRET}
+          # scopes: [channels:read, chat:write]    # optional — providers usually advertise defaults
+          # authorizationUrl: ...                  # optional override when discovery fails
+          # tokenUrl: ...

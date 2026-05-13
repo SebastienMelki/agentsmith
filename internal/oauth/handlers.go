@@ -132,6 +132,27 @@ func (h *Handler) HandleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	redirect := h.callbackURL(r, backend)
+
+	// Dynamic Client Registration: if the operator did not pre-register an
+	// OAuth app, register one on the fly against the upstream's
+	// registration_endpoint. The resulting client_id (and optional secret) is
+	// stashed on the registry so future users of the same backend reuse it.
+	if cfg.ClientID == "" {
+		if cfg.Endpoints.RegistrationURL == "" {
+			http.Error(w, "backend "+backend+" requires a clientId but upstream did not advertise a registration_endpoint — set auth.clientId in config", http.StatusInternalServerError)
+			return
+		}
+		reg, err := RegisterClient(r.Context(), cfg.Endpoints.RegistrationURL, "agentsmith", redirect, cfg.Scopes)
+		if err != nil {
+			http.Error(w, "dynamic client registration failed: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		cfg.ClientID = reg.ClientID
+		cfg.ClientSecret = reg.ClientSecret
+		h.deps.Registry.Set(cfg)
+	}
+
 	pkce, err := NewPKCE()
 	if err != nil {
 		http.Error(w, "pkce: "+err.Error(), http.StatusInternalServerError)
@@ -142,7 +163,6 @@ func (h *Handler) HandleConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "state: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	redirect := h.callbackURL(r, backend)
 	h.state.put(state, &stateEntry{
 		UserID:       uid,
 		Backend:      backend,

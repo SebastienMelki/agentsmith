@@ -16,9 +16,60 @@ import (
 	"github.com/sebastienmelki/agentsmith/internal/secrets"
 )
 
-// httpClient is the HTTP client used for token exchanges and refreshes.
-// Overridden in tests.
+// httpClient is the HTTP client used for token exchanges, refreshes, and
+// dynamic client registration. Overridden in tests.
 var httpClient = &http.Client{Timeout: 30 * time.Second}
+
+// ClientRegistration is the subset of the RFC 7591 Dynamic Client Registration
+// response we persist. ClientSecret is optional — public clients (or providers
+// that prefer PKCE-only) omit it.
+type ClientRegistration struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret,omitempty"`
+}
+
+// RegisterClient performs RFC 7591 Dynamic Client Registration against
+// registrationURL, asking for authorization-code + refresh-token grants with
+// the given redirect URI. Returns the issued client_id (and secret, if any).
+func RegisterClient(ctx context.Context, registrationURL, clientName, redirectURI string, scopes []string) (*ClientRegistration, error) {
+	body := map[string]any{
+		"client_name":                clientName,
+		"redirect_uris":              []string{redirectURI},
+		"grant_types":                []string{"authorization_code", "refresh_token"},
+		"response_types":             []string{"code"},
+		"token_endpoint_auth_method": "client_secret_basic",
+	}
+	if len(scopes) > 0 {
+		body["scope"] = strings.Join(scopes, " ")
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, registrationURL, strings.NewReader(string(raw)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("oauth: dcr post %s: %w", registrationURL, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("oauth: dcr %s: status %d: %s", registrationURL, resp.StatusCode, snippet(respBody))
+	}
+	var reg ClientRegistration
+	if err := json.Unmarshal(respBody, &reg); err != nil {
+		return nil, fmt.Errorf("oauth: parse dcr response: %w (body: %s)", err, snippet(respBody))
+	}
+	if reg.ClientID == "" {
+		return nil, fmt.Errorf("oauth: dcr response missing client_id (body: %s)", snippet(respBody))
+	}
+	return &reg, nil
+}
 
 // PKCE bundles a code verifier and its challenge. We keep the verifier on the
 // server side (in pendingState) and send only the challenge to the

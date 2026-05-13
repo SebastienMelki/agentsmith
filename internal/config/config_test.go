@@ -142,7 +142,10 @@ targets:
 	}
 }
 
-func TestLoad_OAuthTargetRequiresClientIDOrDCR(t *testing.T) {
+// TestLoad_OAuthTargetWithoutClientIDOK confirms that an OAuth target with no
+// clientId is valid — the gateway runs Dynamic Client Registration on first
+// connect, matching what Claude Desktop and other MCP clients do.
+func TestLoad_OAuthTargetWithoutClientIDOK(t *testing.T) {
 	path := writeConfig(t, `
 targets:
   - name: slack
@@ -150,12 +153,12 @@ targets:
     auth:
       type: oauth
 `)
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for oauth target without clientId/DCR, got nil")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
 	}
-	if !strings.Contains(err.Error(), "clientId") {
-		t.Errorf("error %q should mention clientId", err.Error())
+	if cfg.Targets[0].Auth == nil || cfg.Targets[0].Auth.Type != AuthTypeOAuth {
+		t.Errorf("oauth target not parsed: %+v", cfg.Targets[0])
 	}
 }
 
