@@ -148,7 +148,7 @@ func TestBearerToken(t *testing.T) {
 func TestMiddleware_UnprotectedAttachesDefaultUser(t *testing.T) {
 	store := NewMemoryStore()
 	var seen *User
-	h := Middleware(config.ModeUnprotected, store)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	h := Middleware(Options{Mode: config.ModeUnprotected, Users: store})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		seen = FromContext(r.Context())
 	}))
 
@@ -166,7 +166,7 @@ func TestMiddleware_UnprotectedAttachesDefaultUser(t *testing.T) {
 
 func TestMiddleware_ProtectedRequiresBearer(t *testing.T) {
 	store := NewMemoryStore()
-	h := Middleware(config.ModeProtected, store)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	h := Middleware(Options{Mode: config.ModeProtected, Users: store})(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("inner handler should not run on auth failure")
 	}))
 
@@ -184,7 +184,7 @@ func TestMiddleware_ProtectedRequiresBearer(t *testing.T) {
 
 func TestMiddleware_ProtectedRejectsBadKey(t *testing.T) {
 	store := NewMemoryStore()
-	h := Middleware(config.ModeProtected, store)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	h := Middleware(Options{Mode: config.ModeProtected, Users: store})(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("inner handler should not run on auth failure")
 	}))
 
@@ -206,7 +206,7 @@ func TestMiddleware_ProtectedAttachesResolvedUser(t *testing.T) {
 	}
 
 	var seen *User
-	h := Middleware(config.ModeProtected, store)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	h := Middleware(Options{Mode: config.ModeProtected, Users: store})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		seen = FromContext(r.Context())
 	}))
 
@@ -220,5 +220,54 @@ func TestMiddleware_ProtectedAttachesResolvedUser(t *testing.T) {
 	}
 	if seen == nil || seen.ID != user.ID {
 		t.Errorf("user = %+v, want %+v", seen, user)
+	}
+}
+
+// TestMiddleware_UnprotectedWithBearerAcceptsBothAnonymousAndToken confirms
+// that wiring an AS bearer lookup does NOT force callers to present a token —
+// anonymous calls still resolve to the default user. Per-tool-call scope
+// checks (in a different middleware) drive the browser-opens behaviour, not
+// a blanket 401 at connect time. Otherwise static-backend tools would be
+// blocked for users who have never run OAuth.
+func TestMiddleware_UnprotectedWithBearerAcceptsBothAnonymousAndToken(t *testing.T) {
+	store := NewMemoryStore()
+	var seen *User
+	h := Middleware(Options{
+		Mode:  config.ModeUnprotected,
+		Users: store,
+		Bearer: func(token string) (string, bool) {
+			if token == "good-token" {
+				return "alice", true
+			}
+			return "", false
+		},
+		ResourceMetadata: func(_ *http.Request) string {
+			return "http://gateway/.well-known/oauth-protected-resource"
+		},
+	})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		seen = FromContext(r.Context())
+	}))
+
+	// No bearer → 200, default user attached.
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("anonymous status = %d, want 200", rr.Code)
+	}
+	if seen == nil || seen.ID != DefaultUserID {
+		t.Errorf("anonymous user = %+v, want default", seen)
+	}
+
+	// Good bearer → 200, AS-mapped user wins.
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
+	req2.Header.Set("Authorization", "Bearer good-token")
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusOK {
+		t.Errorf("good-bearer status = %d, want 200", rr2.Code)
+	}
+	if seen == nil || seen.ID != "alice" {
+		t.Errorf("bearer user = %+v, want alice", seen)
 	}
 }

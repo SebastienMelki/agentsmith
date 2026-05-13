@@ -11,6 +11,21 @@ changes (documented in their release notes).
 
 ### Added
 
+- **OAuth 2.1 authorization server** — agentsmith now speaks the MCP
+  authorization spec (RFC 9728 + RFC 8414 + RFC 7591) to its MCP clients in
+  addition to its upstream backends. When at least one OAuth backend is
+  configured in `unprotected` mode, the gateway exposes
+  `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`,
+  `/oauth/register`, `/oauth/authorize`, and `/oauth/token` on the MCP port,
+  and the `/mcp` endpoint returns `401 + WWW-Authenticate: Bearer
+  resource_metadata="..."` to clients without a gateway-issued bearer. MCP
+  clients that implement the spec (Claude Code, Cursor, …) **open the browser
+  automatically** for the first connect — no more pasting connect URLs from
+  tool-error messages. Each configured OAuth backend is exposed as the scope
+  `<backend>:*`; `/oauth/authorize` chains the browser through every requested
+  backend's upstream OAuth in turn before minting the final code, so a single
+  consent dance covers however many backends the client asked for. Tokens
+  are opaque, 24h TTL, and refreshable via the standard `refresh_token` grant.
 - **Per-backend call metrics** — each backend now tracks total calls, total
   errors, summed latency, and a per-tool call count. All counters are
   in-memory with no external dependency; the data model is designed so a

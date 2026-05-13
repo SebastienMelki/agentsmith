@@ -93,6 +93,15 @@ func run(cfgPath string) error {
 	oauthReg := oauth.NewRegistry()
 	tokens := secrets.NewRefreshingTokenStore(memTokens, oauth.NewRefresher(oauthReg))
 
+	// Gateway-AS state: DCR client store, single-use code store, issued
+	// bearer-token store, and the multi-backend authorization session store.
+	// Populated lazily — only the MCP middleware reads them, only when an
+	// OAuth backend is configured.
+	asClients := oauth.NewClientStore()
+	asCodes := oauth.NewCodeStore()
+	asTokens := oauth.NewASTokenStore()
+	asSessions := oauth.NewSessionStore()
+
 	ticketKey := cfg.OAuth.TicketKey
 	if ticketKey == "" {
 		// Generate an ephemeral key so existing tickets become invalid on
@@ -134,8 +143,24 @@ func run(cfgPath string) error {
 		}
 	}
 
-	// Wire the OAuth handler now that the registry is populated.
-	oauthHandler := oauth.New(oauth.HandlerDeps{
+	// Collect the OAuth backends configured for this run. The AS uses this to
+	// build scope lists in metadata and to default /authorize's requested
+	// scope when the MCP client doesn't ask for specific backends. Empty when
+	// every target is static — in that case we skip mounting the AS.
+	oauthBackends := make([]string, 0, len(cfg.Targets))
+	for _, t := range cfg.Targets {
+		if t.Auth != nil && t.Auth.Type == config.AuthTypeOAuth {
+			oauthBackends = append(oauthBackends, t.Name)
+		}
+	}
+	asEnabled := len(oauthBackends) > 0 && cfg.AuthMode == config.ModeUnprotected
+
+	// Wire the OAuth handler now that the registry is populated. The AS-side
+	// fields (Clients/Codes/IssuedTokens/Sessions/OAuthBackends/IdentityResolver)
+	// are populated only when AS is enabled; with all of them nil, the
+	// /oauth/register, /oauth/authorize, /oauth/token endpoints respond 503
+	// "not configured" — the legacy ticket flow still works as before.
+	handlerDeps := oauth.HandlerDeps{
 		Tickets:               signer,
 		Tokens:                memTokens, // raw store: callback saves; refresher is read-side
 		Registry:              oauthReg,
@@ -147,7 +172,25 @@ func run(cfgPath string) error {
 			// the error up without an extra log line here.
 			return gw.RegisterToolsForOAuthBackend(ctx, backend, userID)
 		},
-	})
+	}
+	if asEnabled {
+		handlerDeps.Clients = asClients
+		handlerDeps.Codes = asCodes
+		handlerDeps.IssuedTokens = asTokens
+		handlerDeps.Sessions = asSessions
+		handlerDeps.OAuthBackends = oauthBackends
+		// Unprotected mode pins everything to the synthetic default user, so
+		// the AS doesn't need an IdP — every authorize maps to that one ID.
+		handlerDeps.IdentityResolver = oauth.FixedUserIdentity(identity.DefaultUserID)
+		slog.Info("oauth authorization server enabled",
+			"backends", oauthBackends,
+			"endpoints", []string{
+				oauth.AuthorizePath, oauth.TokenPath, oauth.RegisterPath,
+				oauth.ProtectedResourcePath, oauth.AuthorizationServerPath,
+			},
+		)
+	}
+	oauthHandler := oauth.New(handlerDeps)
 
 	// MCP server — serves the federated tool catalog, wrapped with the
 	// identity middleware so tool handlers can attribute calls to a user.
@@ -158,7 +201,40 @@ func run(cfgPath string) error {
 	mcpMux.Handle(cfg.Path, mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return gw.Server()
 	}, nil))
-	mcpHandler := identity.Middleware(cfg.AuthMode, idStore)(mcpMux)
+	authOpts := identity.Options{
+		Mode:  cfg.AuthMode,
+		Users: idStore,
+	}
+	if asEnabled {
+		authOpts.Bearer = func(token string) (string, bool) {
+			userID, _, ok := oauthHandler.LookupBearerToken(token)
+			return userID, ok
+		}
+		authOpts.ResourceMetadata = oauthHandler.ResourceMetadataURL
+	}
+	// AS endpoints (well-known docs, /oauth/register, /authorize, /token,
+	// /callback) must be reachable unauthenticated — that's the whole point
+	// of the 401 challenge. Mount them on a public outer mux that wraps the
+	// guarded /mcp handler under "/".
+	//
+	// Middleware order on /mcp (outermost-in):
+	//   identity → scope-check → MCP handler
+	// identity resolves the caller into a *User on the context; scope-check
+	// reads that user to decide whether the tool call needs an OAuth round
+	// trip. Static-backend tool calls and tools/list skip the check entirely.
+	guarded := http.Handler(mcpMux)
+	if asEnabled {
+		guarded = gw.ScopeMiddleware(oauthHandler.ResourceMetadataURL)(guarded)
+	}
+	guarded = identity.Middleware(authOpts)(guarded)
+	publicMux := http.NewServeMux()
+	if asEnabled {
+		asMux := oauthHandler.HandleASMount()
+		publicMux.Handle("/.well-known/", asMux)
+		publicMux.Handle("/oauth/", asMux)
+	}
+	publicMux.Handle("/", guarded)
+	mcpHandler := http.Handler(publicMux)
 	mcpHandler = logging.RequestIDMiddleware(mcpHandler)
 	if cfg.Logging.Access.MCP != nil && *cfg.Logging.Access.MCP {
 		mcpHandler = logging.AccessLog("mcp", mcpHandler)
